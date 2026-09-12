@@ -1,0 +1,4 @@
+* text=auto eol=lf
+# Bundled dependencies contain significant whitespace inside template strings.
+assets/* -whitespace linguist-generated=true
+index.html linguist-generated=true
