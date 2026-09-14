@@ -50,7 +50,7 @@ Tests run migrations in ephemeral PostgreSQL through PGlite with a minimal Supab
 
 ## Scope
 
-Implemented: sign-in/out and session checks, explicit internal membership, read-only recent candidates, neutral domain/adapter contracts, source-ID mappings, private historical raw snapshots, migrations, and security tests.
+Implemented: sign-in/out and session checks, explicit internal membership, five-minute in-memory workspace caching, quiet stale refreshes, a restrictive production Content Security Policy, read-only recent candidates, neutral domain/adapter contracts, source-ID mappings, private historical raw snapshots, migrations, and security tests.
 
 Deferred: provider implementations, ingestion/normalization workflows, scoring, approval writes/audit workflow, listing persistence, order persistence, webhooks, queues, shipping quotes, purchasing, fulfillment, and tracking. There is no public signup or multi-tenant system.
 

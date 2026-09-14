@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export type Access =
   | { status: 'signed_out' }
   | { status: 'denied' }
-  | { status: 'authorized'; email: string };
+  | { status: 'authorized'; userId: string; email: string };
 
 export async function checkAccess(client: SupabaseClient): Promise<Access> {
   const session = await client.auth.getSession();
@@ -15,5 +15,5 @@ export async function checkAccess(client: SupabaseClient): Promise<Access> {
   const membership = await client.rpc('is_internal_user');
   if (membership.error) throw new Error('Workspace access could not be checked. Ask an administrator to check the database setup.');
   if (membership.data !== true) return { status: 'denied' };
-  return { status: 'authorized', email: user.data.user.email ?? 'Internal user' };
+  return { status: 'authorized', userId: user.data.user.id, email: user.data.user.email ?? 'Internal user' };
 }

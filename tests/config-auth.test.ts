@@ -5,6 +5,7 @@ import { readPublicConfig } from '../src/browser/config';
 import { readServerConfig } from '../src/server/config';
 import { checkAccess } from '../src/browser/auth';
 import { readRecentCandidates } from '../src/browser/workspace-repository';
+import { isWorkspaceSnapshotFresh, WORKSPACE_CACHE_TTL_MS, type WorkspaceSnapshot } from '../src/browser/workspace-cache';
 
 const publicEnv = { PUBLIC_SUPABASE_URL: 'https://example.supabase.co', PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_TEST_ONLY' };
 const jwt = (role: string) => `header.${Buffer.from(JSON.stringify({ role })).toString('base64url')}.signature`;
@@ -30,7 +31,7 @@ function authClient(session: boolean, user: boolean, membership: boolean, rpcErr
     client: {
       auth: {
         getSession: async () => ({ data: { session: session ? {} : null }, error: null }),
-        getUser: async () => ({ data: { user: user ? { email: 'test@example.com' } : null }, error: user ? null : new Error() }),
+        getUser: async () => ({ data: { user: user ? { id: '00000000-0000-4000-8000-000000000001', email: 'test@example.com' } : null }, error: user ? null : new Error() }),
       },
       rpc: async () => { rpcCalls++; return { data: membership, error: rpcError ? new Error() : null }; },
     } as unknown as SupabaseClient,
@@ -45,7 +46,11 @@ test('dashboard checks verified identity and explicit membership; fails closed',
   await assert.rejects(checkAccess(invalid.client), /could not be verified/);
   assert.equal(invalid.calls(), 0);
   assert.deepEqual(await checkAccess(authClient(true, true, false).client), { status: 'denied' });
-  assert.equal((await checkAccess(authClient(true, true, true).client)).status, 'authorized');
+  assert.deepEqual(await checkAccess(authClient(true, true, true).client), {
+    status: 'authorized',
+    userId: '00000000-0000-4000-8000-000000000001',
+    email: 'test@example.com',
+  });
   await assert.rejects(checkAccess(authClient(true, true, true, true).client), /could not be checked/);
 });
 
@@ -54,4 +59,18 @@ test('repository does not convert failed or malformed reads into a valid empty w
   await assert.rejects(readRecentCandidates(client(null, new Error('raw secret error'))), /^Error: Candidates could not be loaded/);
   await assert.rejects(readRecentCandidates(client([{ status: 'invented' }], null)), /expected format/);
   assert.deepEqual(await readRecentCandidates(client([], null)), []);
+});
+
+test('workspace cache is page-memory only and expires after five minutes', () => {
+  const fetchedAt = 1_000_000;
+  const snapshot: WorkspaceSnapshot = {
+    access: { status: 'authorized', userId: '00000000-0000-4000-8000-000000000001', email: 'test@example.com' },
+    candidates: [],
+    fetchedAt,
+  };
+  assert.equal(isWorkspaceSnapshotFresh(snapshot, fetchedAt), true);
+  assert.equal(isWorkspaceSnapshotFresh(snapshot, fetchedAt + WORKSPACE_CACHE_TTL_MS - 1), true);
+  assert.equal(isWorkspaceSnapshotFresh(snapshot, fetchedAt + WORKSPACE_CACHE_TTL_MS), false);
+  assert.equal(isWorkspaceSnapshotFresh(snapshot, fetchedAt - 1), false);
+  assert.equal(isWorkspaceSnapshotFresh(null, fetchedAt), false);
 });

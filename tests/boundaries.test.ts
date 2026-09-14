@@ -49,11 +49,17 @@ test('browser bundle contains only explicitly allowed public config, never serve
     const result = await build({ logLevel: 'silent', build: { write: false } });
     const output = (Array.isArray(result) ? result : [result]).flatMap(item => 'output' in item ? item.output : []);
     const bundle = output.map(item => item.type === 'chunk' ? item.code : String(item.source)).join('\n');
+    const html = output.find(item => item.type === 'asset' && item.fileName === 'index.html');
+    const htmlSource = html?.type === 'asset' ? String(html.source) : '';
     assert.ok(bundle.includes(env.PUBLIC_SUPABASE_URL));
     assert.ok(bundle.includes(env.PUBLIC_SUPABASE_PUBLISHABLE_KEY));
     assert.ok(!bundle.includes(env.SUPABASE_SERVICE_ROLE_KEY));
     assert.ok(!bundle.includes(env.PUBLIC_UNRELATED_SECRET));
     assert.ok(!bundle.includes('createPrivilegedDatabase'));
+    assert.match(htmlSource, /Content-Security-Policy/);
+    assert.match(htmlSource, /default-src (?:'|&#39;)none(?:'|&#39;)/);
+    assert.match(htmlSource, /connect-src https:\/\/example\.supabase\.co wss:\/\/example\.supabase\.co/);
+    assert.doesNotMatch(htmlSource, /unsafe-inline|unsafe-eval/);
   } finally {
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
