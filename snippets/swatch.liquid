@@ -1,0 +1,33 @@
+{% comment %}
+  Renders a swatch component.
+  Accepts:
+  - swatch: {Object} a swatch object
+  - shape: {String} swatch shape. Accepts 'square', defaults to circle.
+
+  Usage:
+  {% render 'swatch',
+    swatch: value.swatch
+    shape: 'square'
+  %}
+{% endcomment %}
+
+{%- liquid
+
+  assign swatch_value = null
+  if swatch.image
+    assign image_url = swatch.image | image_url: width: 50
+    assign swatch_value = 'url(' | append: image_url | append: ')'
+    assign swatch_focal_point = swatch.image.presentation.focal_point
+  elsif swatch.color
+    assign swatch_value = 'rgb(' | append: swatch.color.rgb | append: ')'
+  endif
+-%}
+
+<span
+    class="swatch{% if shape == 'square' %} swatch--square{% endif %} color-swatch"
+    style="{% if swatch_type == 'custom_color' or swatch_type == 'image_alt' %}background: {{ custom_color_swatch }};{% elsif swatch_type == 'image' %} background-image: url({{ custom_color_swatch }});{% endif %}"
+
+>
+<span class="color-swatch__label">{{value}}</span>
+
+</span>

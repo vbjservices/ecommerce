@@ -1,0 +1,118 @@
+{% assign text_start_value = block.settings.message | replace: '[start_date]', '-' | replace: '[end_date]', '-' %}
+{% assign id = 'esimated-shipping' | append: section.id | append: block.id %}
+<div
+  class="estimated-shipping{% if block.settings.icon_alignment == 'middle' %} estimated-shipping--align-center{% endif %}"
+  id="{{ id }}"
+  data-text="{{ block.settings.message }}"
+  data-min-days="{{ block.settings.min_shipping_days }}"
+  data-max-days="{{ block.settings.max_shipping_days }}"
+  data-date-format="{{ block.settings.date_format }}"
+  data-day-labels="{{ block.settings.days_labels }}"
+  data-month-labels="{{ block.settings.months_labels }}"
+  style="--margin-top: {{ block.settings.margin_top | divided_by: 10.0 }}rem;--margin-bottom: {{ block.settings.margin_bottom | divided_by: 10.0 }}rem;"
+  {{ block.shopify_attributes }}
+>
+  {% if block.settings.display_icon %}
+    <div class="estimated-shipping__icon estimated-shipping__icon--{{ block.settings.icon_size }}">
+      {% if block.settings.custom_icon == blank %}
+        {% render 'ds-icon-accordion', icon: 'truck' %}
+      {% else %}
+        <img
+          src="{{ block.settings.custom_icon | image_url }}"
+          width="auto"
+          height="auto"
+          loading="lazy"
+        >
+      {% endif %}
+    </div>
+  {% endif %}
+  <div class="estimated-shipping__text">
+    {{ text_start_value }}
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const estimatedShipping = document.querySelector('#{{ id }}');
+    if (estimatedShipping) {
+
+      const months = estimatedShipping.getAttribute('data-month-labels').split(',');
+      const days = rearrangeDays(estimatedShipping.getAttribute('data-day-labels').split(','));
+
+      const originalText = estimatedShipping.getAttribute('data-text');
+      const shippingMinDays = parseInt(estimatedShipping.getAttribute('data-min-days'));
+      const shippingMaxDays = parseInt(estimatedShipping.getAttribute('data-max-days'));
+      const dateFormat = estimatedShipping.getAttribute('data-date-format');
+      const textContainer = estimatedShipping.querySelector('.estimated-shipping__text');
+
+      const currentDate = new Date();
+
+      const startDate = addDays(currentDate, shippingMinDays);
+      var startDateDaySuffix = 'th';
+      const startDay = startDate.getDate();
+      if (startDay === 1 || startDay === 21 || startDay === 31) startDateDaySuffix = 'st';
+      else if (startDay === 2 || startDay === 22) startDateDaySuffix = 'nd';
+      else if (startDay === 3 || startDay === 23) startDateDaySuffix = 'rd';
+
+      const endDate = addDays(currentDate, shippingMaxDays);
+      var endDateDaySuffix = 'th';
+      const endDay = endDate.getDate();
+      if (endDay === 1 || endDay === 21 || endDay === 31) endDateDaySuffix = 'st';
+      else if (endDay === 2 || endDay === 22) endDateDaySuffix = 'nd';
+      else if (endDay === 3 || endDay === 23) endDateDaySuffix = 'rd';
+
+      let startDateString, endDateString;
+      if (dateFormat === 'day_dd_mm') {
+        console.log('day_dd_mm')
+        startDateString = days[startDate.getDay()] + ', ' + startDate.getDate() + '. ' + months[startDate.getMonth()];
+        endDateString = days[endDate.getDay()] + ', ' + endDate.getDate() + '. ' + months[endDate.getMonth()];
+      } else if (dateFormat === 'mm_dd') {
+        console.log('mm_dd')
+        startDateString = months[startDate.getMonth()] + ' ' + startDate.getDate() + startDateDaySuffix;
+        endDateString = months[endDate.getMonth()] + ' ' + endDate.getDate() + endDateDaySuffix;
+      } else if (dateFormat === 'dd_mm') {
+        console.log('dd_mm')
+        startDateString = startDate.getDate() + '. ' + months[startDate.getMonth()];
+        endDateString = endDate.getDate() + '. ' + months[endDate.getMonth()];
+      } else if (dateFormat === 'day_dd_mm_numeric') {
+        console.log('day_dd_mm_numeric')
+        const startDateDay = String(startDate.getDate()).length > 1 ? startDate.getDate() : '0' + startDate.getDate();
+        const startDateMonth = String((startDate.getMonth() + 1)).length > 1 ? (startDate.getMonth() + 1) : '0' + (startDate.getMonth() + 1);
+        startDateString = days[startDate.getDay()] + ', ' + startDateDay + '. ' + startDateMonth + '.';
+  
+        const endDateDay = String(endDate.getDate()).length > 1 ? endDate.getDate() : '0' + endDate.getDate();
+        const endDateMonth = String((endDate.getMonth() + 1)).length > 1 ? (endDate.getMonth() + 1) : '0' + (endDate.getMonth() + 1);
+        endDateString = days[endDate.getDay()] + ', ' + endDateDay + '. ' + endDateMonth + '.';
+      } else if (dateFormat === 'dd_mm_numeric') {
+        console.log('dd_mm_numeric')
+        const startDateDay = String(startDate.getDate()).length > 1 ? startDate.getDate() : '0' + startDate.getDate();
+        const startDateMonth = String((startDate.getMonth() + 1)).length > 1 ? (startDate.getMonth() + 1) : '0' + (startDate.getMonth() + 1);
+        startDateString = startDateDay + '. ' + startDateMonth + '.';
+  
+        const endDateDay = String(endDate.getDate()).length > 1 ? endDate.getDate() : '0' + endDate.getDate();
+        const endDateMonth = String((endDate.getMonth() + 1)).length > 1 ? (endDate.getMonth() + 1) : '0' + (endDate.getMonth() + 1);
+        endDateString = endDateDay + '. ' + endDateMonth + '.';
+      } else {
+        // day_mm_dd
+        startDateString = days[startDate.getDay()] + ', ' + months[startDate.getMonth()] + ' ' + startDate.getDate() + startDateDaySuffix;
+        endDateString = days[endDate.getDay()] + ', ' + months[endDate.getMonth()] + ' ' + endDate.getDate() + endDateDaySuffix;
+      }
+      
+      const textWithStartDate = originalText.replace('[start_date]', startDateString);
+      const finalText = textWithStartDate.replace('[end_date]', endDateString)
+      textContainer.innerHTML = finalText;
+    }
+
+    function addDays(date, days) {
+      var result = new Date(date);
+      result.setDate(result.getDate() + days);
+      return result;
+    }
+
+    function rearrangeDays(arr) {
+      arr.unshift(arr[6]);
+      arr.length = 7;
+      return arr;
+    }
+  })
+</script>

@@ -1,0 +1,31 @@
+{% if block.settings.field_name != blank %}
+    {%  assign product_form_id =  'product-form-' | append: section.id %}
+    <custom-product-field
+      class="custom-product-field"
+      id='CustomField-{{ section.id }}-{{ block.id }}'
+      data-name="{{ block.settings.field_name }}"
+      data-section="{{ section.id }}"
+      style="--margin-top: {{ block.settings.margin_top | divided_by: 10.0 }}rem;--margin-bottom: {{ block.settings.margin_bottom | divided_by: 10.0 }}rem;"
+      {{ block.shopify_attributes }}
+    >
+      <div class="product-form__input small-field__field">
+        {% if block.settings.field_label != blank %}
+          <label class="form__label">
+            {{ block.settings.field_label }}
+          </label>
+        {% endif %}
+        <input
+          type="text"
+          class='input--small'
+          placeholder="{{ block.settings.text_placeholder }}"
+          autocorrect="off"
+          autocapitalize="off"
+          autocomplete="off"
+          form="{{ product_form_id }}"
+          name="properties[{{block.settings.field_name}}]"
+        >
+      </div>
+    </custom-product-field>
+  {% else %}
+    <h3>Field name must not be empty.</h3>
+  {% endif %}

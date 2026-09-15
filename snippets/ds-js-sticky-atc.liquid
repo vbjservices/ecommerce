@@ -1,0 +1,49 @@
+{% comment %}
+  Renders the js to the sticky-atc element in product page
+
+  Usage:
+  {% render 'ds-js-sticky-atc', section: section %}
+{% endcomment %}
+<script>
+    const isScrollBtn = document.querySelector('.sticky-atc__scroll-btn');
+    if(isScrollBtn){
+        isScrollBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            const parentElement = event.currentTarget.closest('.sticky-atc');
+            const baseScrollDestination = parentElement?.getAttribute('data-scroll-destination');
+
+            const scrollDestination = baseScrollDestination.includes('id')
+                    ?  baseScrollDestination.replace("id",'{{section.id}}') 
+                    : baseScrollDestination;
+            const target = document.querySelector(`${scrollDestination}`);
+            
+            if (target) {
+                const offset = 100; 
+                const targetPosition = target.getBoundingClientRect().top + window.scrollY - offset;
+
+                window.scrollTo({
+                    top: targetPosition,
+                    behavior: 'smooth'
+                });
+            } else {
+                console.error('Target section not found.');
+            }
+        });
+    }
+
+  document.addEventListener('scroll', () => {
+    const triggerElement = document.querySelector('[id^="MainProduct-{{ section.id }}"]');
+    const targetElement = document.querySelector('[data-after-scroll="true"]');
+    if (!targetElement) return; 
+    
+    const triggerPosition = triggerElement.getBoundingClientRect().top;
+
+    if (triggerPosition < 0) {
+        targetElement.style.transform = 'none';
+    } else {
+        targetElement.style.transform = 'translateY(100%)';
+    }
+  });
+
+
+</script>

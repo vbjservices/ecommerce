@@ -1,0 +1,109 @@
+{% comment %}
+  Renders product variant-picker
+
+  Accepts:
+  - product: {Object} product object.
+  - block: {Object} passing the block information.
+  - product_form_id: {String} Id of the product form to which the variant picker is associated.
+  Usage:
+  {% render 'product-variant-picker', product: product, block: block, product_form_id: product_form_id %}
+{% endcomment %}
+{%- unless product.has_only_default_variant -%}
+  {% liquid
+  assign types_string = block.settings.picker_types | downcase
+  if types_string == blank
+    assign types_string = 'pills,pills,pills'
+  endif
+  assign types_array = types_string | split: ','
+%}
+  <variant-selects
+    id="variant-selects-{{ section.id }}"
+    data-section="{{ section.id }}"
+    style="--margin-top: {{ block.settings.margin_top | divided_by: 10.0 }}rem;--margin-bottom: {{ block.settings.margin_bottom | divided_by: 10.0 }}rem;"
+    {{ block.shopify_attributes }}
+  >
+    {%- for option in product.options_with_values -%}
+      {% assign type = types_array[forloop.index0] | strip | replace: ' ', '-' %}
+      {%- liquid 
+        if type == 'swatches'
+          assign type = 'swatch'
+        elsif type == 'pills'
+          assign type = 'button'
+        elsif type != 'dropdown'
+          assign type = 'button' 
+        endif
+      -%}
+
+      {%  capture label_content %} {% assign downcase_name = option.name | downcase %}
+        {% assign uppercase_name = option.name | upcase %}
+        {{
+          block.settings.custom_labels
+          | replace: '[count]', forloop.index
+          | replace: '[name]', option.name
+          | replace: '[name_lowercase]', downcase_name
+          | replace: '[name_uppercase]', uppercase_name
+          | replace: '[selected]', option.selected_value
+        }} {% endcapture %} 
+      {%- if type == 'swatch' -%}
+
+        <fieldset class="js product-form__input product-form__input--swatch">
+          <legend class="form__label">
+            {{label_content}}
+          </legend>
+          {% render 'product-variant-options',
+            product: product,
+            option: option,
+            block: block,
+            picker_type: type
+          %}
+        </fieldset>
+      {%- elsif type == 'button' -%}
+        <fieldset class="js product-form__input product-form__input--pill">
+          <legend class="form__label">{{label_content}}</legend>
+          {% render 'product-variant-options',
+            product: product,
+            option: option,
+            block: block,
+            picker_type: type
+          %}
+        </fieldset>
+      {%- else -%}
+        <div class="product-form__input product-form__input--dropdown">
+          <label class="form__label" for="Option-{{ section.id }}-{{ forloop.index0 }}">
+            {{label_content}}
+          </label>
+          <div class="select">
+            {%- if type == 'swatch_dropdown' -%}
+              <span
+                data-selected-value
+                class="dropdown-swatch"
+              >
+                {% render 'swatch', swatch: option.selected_value.swatch, shape: 'circle' %}
+              </span>
+            {%- endif -%}
+            <select
+              id="Option-{{ section.id }}-{{ forloop.index0 }}"
+              class="select__select"
+              name="options[{{ option.name | escape }}]"
+              form="{{ product_form_id }}"
+            >
+              {% render 'product-variant-options',
+                product: product,
+                option: option,
+                block: block,
+                picker_type: type
+              %}
+            </select>
+            <span class="svg-wrapper">
+              {{- 'icon-caret.svg' | inline_asset_content -}}
+            </span>
+          </div>
+        </div>
+      {%- endif -%}
+    {%- endfor -%}
+
+    <script type="application/json" data-selected-variant>
+      {{ product.selected_or_first_available_variant | json }}
+    </script>
+  </variant-selects>
+{%- endunless -%}

@@ -1,0 +1,24 @@
+<wd-label text="{{ section.settings.text }}" count="{{ section.settings.initialNumber }}"></wd-label>
+
+{% comment %} Section schema definition: https://shopify.dev/docs/themes/architecture/sections {% endcomment %}
+{% comment %} Section input settings: https://shopify.dev/docs/themes/architecture/settings/input-settings {% endcomment %}
+
+{% schema %}
+{
+  "name": "WD Label",
+  "settings": [
+    {
+      "type": "text",
+      "id": "text",
+      "label": "Button Text",
+      "default": "Text Here"
+    },
+    {
+      "type": "number",
+      "id": "initialNumber",
+      "label": "Initial Number",
+      "default": 0
+    }
+  ]
+}
+{% endschema %}

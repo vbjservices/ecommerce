@@ -1,0 +1,246 @@
+{{ 'ds-component-tickers.css' | asset_url | stylesheet_tag }}
+
+{%- style -%}
+  .section-{{ section.id }}-padding {
+    padding-top: {{ section.settings.padding_top | times: 0.75 | round: 0 }}px;
+    padding-bottom: {{ section.settings.padding_bottom | times: 0.75 | round: 0 }}px;
+  }
+
+  @media screen and (min-width: 750px) {
+    .section-{{ section.id }}-padding {
+      padding-top: {{ section.settings.padding_top }}px;
+      padding-bottom: {{ section.settings.padding_bottom }}px;
+    }
+  }
+
+  .horizontal-ticker-{{ section.id }} .horizontal-ticker__item {
+    font-size: {{ section.settings.text_size }}rem;
+    padding: 0 {{ section.settings.text_spacing}}rem;
+  }
+  .horizontal-ticker-{{ section.id }} .horizontal-ticker__container {
+    animation: horTicker {{ 150 | divided_by: section.settings.speed }}s linear infinite forwards;
+  }
+
+  .horizontal-ticker-{{ section.id }}.color-custom {
+    --color-background: {{ section.settings.custom_colors_background.red }}, {{ section.settings.custom_colors_background.green }}, {{ section.settings.custom_colors_background.blue }};
+    --gradient-background: {% if section.settings.custom_gradient_background != blank %}{{ section.settings.custom_gradient_background }}{% else %}{{ section.settings.custom_colors_background }}{% endif %};
+    --color-foreground: {{ section.settings.custom_colors_text.red }}, {{ section.settings.custom_colors_text.green }}, {{ section.settings.custom_colors_text.blue }};
+  }
+{%- endstyle -%}
+
+<div class="horizontal-ticker horizontal-ticker-{{ section.id }} color-{{ section.settings.color_scheme }} section-{{ section.id }}-padding">
+  <!-- <div class="horizontal-ticker__inner"> -->
+  <div class="horizontal-ticker__container">
+    {% assign unique_blocks_total = section.blocks | size %}
+    {% assign target_multiply = 20 | divided_by: unique_blocks_total | floor %}
+    {% assign target_total = unique_blocks_total | times: target_multiply | times: 2 %}
+    {% assign block_counter = 0 %}
+
+    {%- for block in section.blocks -%}
+      {%- assign block_counter = block_counter | plus: 1 -%}
+      <p class="horizontal-ticker__item{% if section.settings.italic_text %} horizontal-ticker__item--italic{% endif %}{% if section.settings.uppercase_text %} horizontal-ticker__item--uppercase{% endif %}{% if section.settings.bold_text %} horizontal-ticker__item--bold{% endif %}">
+        {{ block.settings.title }}
+      </p>
+    {%- endfor -%}
+
+    {%- if block_counter < target_total -%}
+      {% for i in (1..15) %}
+        {% for block in section.blocks %}
+          <p class="horizontal-ticker__item{% if section.settings.italic_text %} horizontal-ticker__item--italic{% endif %}{% if section.settings.uppercase_text %} horizontal-ticker__item--uppercase{% endif %}{% if section.settings.bold_text %} horizontal-ticker__item--bold{% endif %}">
+            {{ block.settings.title }}
+          </p>
+
+          {% assign block_counter = block_counter | plus: 1 %}
+          {% if block_counter >= target_total %}
+            {% break %}
+          {% endif %}
+        {% endfor %}
+        {% if block_counter >= target_total %}
+          {% break %}
+        {% endif %}
+      {% endfor %}
+    {%- endif -%}
+  </div>
+  <!-- </div> -->
+</div>
+
+{% schema %}
+{
+  "name": "Horizontal Ticker",
+  "settings": [
+    {
+        "type": "range",
+        "id": "speed",
+        "label": "Ticker speed",
+        "min": 1,
+        "max": 5,
+        "default": 3,
+        "step": 0.5
+    },
+    {
+        "type": "range",
+        "id": "text_spacing",
+        "label": "Text spacing",
+        "min": 1,
+        "max": 5,
+        "default": 3,
+        "step": 0.5
+    },
+    {
+        "type": "select",
+        "id": "text_size",
+        "label": "Text size",
+        "options": [
+            {
+                "value": "1.25",
+                "label": "Extra small"
+            },
+            {
+                "value": "1.5",
+                "label": "Small"
+            },
+            {
+                "value": "1.75",
+                "label": "Medium"
+            },
+            {
+                "value": "2",
+                "label": "Large"
+            },
+            {
+                "value": "2.5",
+                "label": "Extra large"
+            }
+        ],
+        "default": "1.75"
+    },
+    {
+        "type": "checkbox",
+        "id": "italic_text",
+        "label": "Italic text",
+        "default": false
+    },
+    {
+        "type": "checkbox",
+        "id": "uppercase_text",
+        "label": "Uppercase text",
+        "default": false
+    },
+    {
+        "type": "checkbox",
+        "id": "bold_text",
+        "label": "Bold text",
+        "default": false
+    },
+    {
+      "type": "select",
+      "id": "color_scheme",
+      "options": [
+        {
+          "value": "accent-1",
+          "label": "t:sections.all.colors.accent_1.label"
+        },
+        {
+          "value": "accent-2",
+          "label": "t:sections.all.colors.accent_2.label"
+        },
+        {
+          "value": "background-1",
+          "label": "t:sections.all.colors.background_1.label"
+        },
+        {
+          "value": "background-2",
+          "label": "t:sections.all.colors.background_2.label"
+        },
+        {
+          "value": "inverse",
+          "label": "t:sections.all.colors.inverse.label"
+        },
+        {
+          "value": "custom",
+          "label": "Custom"
+        }
+      ],
+      "default": "accent-1",
+      "label": "t:sections.all.colors.label"
+    },
+    {
+      "type": "header",
+      "content": "t:sections.all.padding.section_padding_heading"
+    },
+    {
+      "type": "range",
+      "id": "padding_top",
+      "min": 0,
+      "max": 100,
+      "step": 4,
+      "unit": "px",
+      "label": "t:sections.all.padding.padding_top",
+      "default": 16
+    },
+    {
+      "type": "range",
+      "id": "padding_bottom",
+      "min": 0,
+      "max": 100,
+      "step": 4,
+      "unit": "px",
+      "label": "t:sections.all.padding.padding_bottom",
+      "default": 16
+    },
+    {
+      "type": "header",
+      "content": "Custom color scheme",
+      "info": "Applied if Color scheme setting is set to Custom."
+    },
+    {
+      "type": "color",
+      "id": "custom_colors_background",
+      "default": "#FFFFFF",
+      "label": "Background color"
+    },
+    {
+      "type": "color_background",
+      "id": "custom_gradient_background",
+      "label": "Gradient background",
+      "info": "If added, replaces Background color when applicable."
+    },
+    {
+      "type": "color",
+      "id": "custom_colors_text",
+      "default": "#2E2A39",
+      "label": "Text"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "name": "Text",
+      "settings": [
+        {
+          "type": "text",
+          "id": "title",
+          "default": "AutoDS Theme",
+          "label": "Text"
+        }
+      ]
+    }
+  ],
+  "presets": [
+  {
+    "name": "Horizontal Ticker",
+    "blocks": [
+      {
+        "type": "text"
+      },
+      {
+        "type": "text"
+      },
+      {
+        "type": "text"
+      }
+    ]
+  }
+]
+}
+{% endschema %}
