@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { readPublicConfig } from '../src/browser/config';
-import { readServerConfig } from '../src/server/config';
+import { readCjConfig, readServerConfig } from '../src/server/config';
 import { checkAccess } from '../src/browser/auth';
 import { readRecentCandidates } from '../src/browser/workspace-repository';
 import { isWorkspaceSnapshotFresh, WORKSPACE_CACHE_TTL_MS, type WorkspaceSnapshot } from '../src/browser/workspace-cache';
@@ -22,6 +22,8 @@ test('configuration fails clearly without echoing values or accepting privileged
   assert.equal(readPublicConfig({ ...publicEnv, PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321' }).supabaseUrl, 'http://127.0.0.1:54321');
   assert.throws(() => readServerConfig({ SUPABASE_URL: publicEnv.PUBLIC_SUPABASE_URL }), /Missing SUPABASE_SERVICE_ROLE_KEY/);
   assert.throws(() => readServerConfig({ SUPABASE_URL: publicEnv.PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY: jwt('anon') }), /must be a secret/);
+  assert.throws(() => readCjConfig({}), /Missing CJ_API_KEY/);
+  assert.equal(readCjConfig({ CJ_API_KEY: 'private-cj-key' }).apiKey, 'private-cj-key');
 });
 
 function authClient(session: boolean, user: boolean, membership: boolean, rpcError = false) {

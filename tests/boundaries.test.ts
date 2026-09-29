@@ -41,6 +41,7 @@ test('browser bundle contains only explicitly allowed public config, never serve
     PUBLIC_SUPABASE_URL: 'https://example.supabase.co',
     PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_BUILD_TEST_ONLY',
     SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_SERVER_CANARY_DO_NOT_SHIP',
+    CJ_API_KEY: 'CJ_SERVER_CANARY_DO_NOT_SHIP',
     PUBLIC_UNRELATED_SECRET: 'CANARY_NOT_ALLOWLISTED',
   };
   const saved = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
@@ -54,6 +55,7 @@ test('browser bundle contains only explicitly allowed public config, never serve
     assert.ok(bundle.includes(env.PUBLIC_SUPABASE_URL));
     assert.ok(bundle.includes(env.PUBLIC_SUPABASE_PUBLISHABLE_KEY));
     assert.ok(!bundle.includes(env.SUPABASE_SERVICE_ROLE_KEY));
+    assert.ok(!bundle.includes(env.CJ_API_KEY));
     assert.ok(!bundle.includes(env.PUBLIC_UNRELATED_SECRET));
     assert.ok(!bundle.includes('createPrivilegedDatabase'));
     assert.match(htmlSource, /Content-Security-Policy/);

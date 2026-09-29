@@ -1,0 +1,19 @@
+{
+  "code": 200,
+  "result": true,
+  "success": true,
+  "message": "",
+  "data": {
+    "variantInventories": [
+      {
+        "vid": "1561984433677414400",
+        "inventory": [{"countryCode": "CN", "totalInventory": 10022}]
+      },
+      {
+        "vid": "2506170616321605300",
+        "inventory": [{"countryCode": "CN", "totalInventory": 8337}]
+      }
+    ]
+  },
+  "requestId": "stock-request"
+}

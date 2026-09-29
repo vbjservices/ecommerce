@@ -9,3 +9,7 @@ export function readServerConfig(env: Record<string, unknown>) {
   }
   return { supabaseUrl: url, serviceRoleKey: key };
 }
+
+export function readCjConfig(env: Record<string, unknown>) {
+  return { apiKey: required(env.CJ_API_KEY, 'CJ_API_KEY') };
+}

@@ -14,7 +14,8 @@
     "pages:build": "npm run build && node scripts/stage-pages.mjs",
     "pages:check": "node scripts/stage-pages.mjs --check",
     "check": "npm run typecheck && npm test && npm run build && npm run pages:check",
-    "health": "node --env-file-if-exists=.env.local --import tsx src/server/health-cli.ts"
+    "health": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx src/server/health-cli.ts",
+    "cj:import": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx src/server/ingest-cj-product-cli.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.116.0",

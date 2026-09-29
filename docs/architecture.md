@@ -55,14 +55,15 @@ Only `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_PUBLISHABLE_KEY` can be embedded
 
 All secret-bearing `.env*` files are ignored, including nested ones. `.env.example` has empty assignments only. Pages assets, public keys, and all tracked repository content must be treated as public. A static host cannot conceal server credentials or source files accidentally committed to its publication root.
 
-## Next implementation
+## CJ ingestion slice
 
-Implement one bounded **CJ product-by-ID ingestion** slice, using a development Supabase project:
+The bounded **CJ product-by-ID ingestion** slice is implemented as follows:
 
-1. Add `src/server/integrations/suppliers/cj/` with authenticated HTTP reads, input validation, fixture-tested normalization, sanitized errors, and catalog capability.
-2. Add a trusted ingestion service and repository transaction/RPC for deterministic supplier-ID deduplication, product/variant mappings, private raw snapshots, provenance, and one candidate. Handle variant partial failures explicitly. Do not use a series of independent browser writes.
-3. Prove repeat imports do not duplicate identities and unknown values remain unknown. Add local Supabase integration tests for the transaction and repository.
-4. Show the real ingested candidate in the existing protected dashboard. Add needed read fields deliberately.
-5. Then implement authenticated review, audit events, durable draft intent/idempotency, and the Shopify draft adapter. Keep candidate review and channel listing outcomes separate.
+1. `src/server/integrations/suppliers/cj/` owns token caching, authenticated product/variant/inventory reads, input validation, normalization, and sanitized provider errors.
+2. The trusted ingestion service calls one service-role-only PostgreSQL RPC. That transaction deduplicates by supplier product/variant IDs and writes mappings, observations, a candidate, and a private raw snapshot.
+3. Contract and PostgreSQL tests prove repeat imports do not duplicate identities, unknown values remain null, browser roles cannot execute ingestion, and invalid variant batches roll back.
+4. `npm run cj:import -- PRODUCT_ID_OR_URL` runs the slice from a trusted machine with server-only credentials.
+
+Next, deploy the migration and import a real candidate into the development project. Then extend the dashboard read model with the deliberate fields needed for candidate inspection before adding authenticated review and Shopify draft creation.
 
 Do not add scoring, bulk discovery, purchases, or customer-facing publication to this slice.

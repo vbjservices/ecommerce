@@ -1,0 +1,13 @@
+{
+  "code": 200,
+  "result": true,
+  "success": true,
+  "message": "Success",
+  "data": {
+    "pid": "1561984433618694144",
+    "productNameEn": "Catnip Balls Cat Treats Rotary Molar Teeth Cleaning",
+    "description": "<p><b>Product Details:</b><br>Flavor: Mint &amp; catnip</p><script>ignored()</script>",
+    "productKeyEnSet": ["Color", "style"]
+  },
+  "requestId": "product-request"
+}

@@ -2,7 +2,7 @@
 
 A small internal ecommerce foundation: a static dashboard on GitHub Pages, Supabase PostgreSQL/Auth for persistent state and access, and TypeScript boundaries for future server-side integrations.
 
-CJ is the first planned supplier. Shopify is the first planned sales channel. Neither defines our products, candidates, or orders.
+CJ is the first supplier integration. Shopify is the first planned sales channel. Neither defines our products, candidates, or orders.
 
 ## Run
 
@@ -50,8 +50,8 @@ Tests run migrations in ephemeral PostgreSQL through PGlite with a minimal Supab
 
 ## Scope
 
-Implemented: sign-in/out and session checks, explicit internal membership, five-minute in-memory workspace caching, quiet stale refreshes, a restrictive production Content Security Policy, read-only recent candidates, neutral domain/adapter contracts, source-ID mappings, private historical raw snapshots, migrations, and security tests.
+Implemented: sign-in/out and session checks, explicit internal membership, five-minute in-memory workspace caching, quiet stale refreshes, a restrictive production Content Security Policy, read-only recent candidates, neutral domain/adapter contracts, CJ product/variant/inventory reads, atomic idempotent supplier ingestion, source-ID mappings, private historical raw snapshots, migrations, and security tests.
 
-Deferred: provider implementations, ingestion/normalization workflows, scoring, approval writes/audit workflow, listing persistence, order persistence, webhooks, queues, shipping quotes, purchasing, fulfillment, and tracking. There is no public signup or multi-tenant system.
+Deferred: discovery/search automation, scoring, approval writes/audit workflow, listing persistence, order persistence, webhooks, queues, shipping quotes, purchasing, fulfillment, and tracking. There is no public signup or multi-tenant system.
 
-Next: [CJ ingestion into products, variants, and candidates](docs/architecture.md#next-implementation).
+Next: deploy the CJ ingestion migration, import the first real product, then enrich the protected dashboard candidate read model.

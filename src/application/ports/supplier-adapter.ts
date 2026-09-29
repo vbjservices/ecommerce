@@ -11,6 +11,7 @@ export interface SupplierSnapshot {
 /** Capability presence is the source of truth; no flags that can disagree with methods. */
 export interface SupplierAdapter {
   provider: string;
+  providerName: string;
   catalog?: {
     getProduct(externalProductId: string): Promise<SupplierSnapshot>;
   };

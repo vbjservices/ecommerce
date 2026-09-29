@@ -51,6 +51,7 @@ Copy `.env.example` to the ignored `.env.local`. Set:
 | `PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser-safe publishable key; legacy anon also accepted |
 | `SUPABASE_URL` | Same project URL, only needed for trusted server tools |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server secret or legacy service-role key, only for trusted tools |
+| `CJ_API_KEY` | CJ API key, only needed for trusted CJ ingestion |
 
 Leave server-only fields empty when working only on the dashboard. Public configuration is intentionally visible in browser JavaScript. Never put privileged credentials in any `PUBLIC_` variable. The build exposes exactly the two named public variables and rejects privileged key formats in the public key field. `.env.example` must remain names with empty assignments.
 
@@ -74,7 +75,19 @@ After the migration and configuration:
 
 The automated PGlite tests prove SQL grants, RLS, and constraints with modeled Auth roles. This hosted check separately verifies Supabase Auth/PostgREST deployment wiring.
 
-## 5. Publish using the existing Pages setting
+## 5. Import a CJ product from a trusted machine
+
+Apply all migrations first. The supplier-ingestion migration exposes one service-role-only RPC that atomically writes normalized products, variants, mappings, a candidate, and a private raw snapshot. Browser roles cannot execute it.
+
+Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `CJ_API_KEY` in the ignored `.env.local` or `.env`, then run:
+
+```sh
+npm run cj:import -- 1561984433618694144
+```
+
+A CJ product URL is also accepted. Repeating the command updates the same mapped product and variants, creates another private historical snapshot, and does not duplicate the candidate. The command never prints credentials, access tokens, or raw provider responses.
+
+## 6. Publish using the existing Pages setting
 
 Keep **Settings → Pages → Deploy from a branch → main → / (root)**. GitHub Pages serves the generated `index.html` and `assets/`; it does not run Node, migrations, or server modules.
 

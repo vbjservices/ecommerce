@@ -1,0 +1,23 @@
+{
+  "code": 200,
+  "result": true,
+  "success": true,
+  "message": "Success",
+  "data": [
+    {
+      "vid": "1561984433677414400",
+      "pid": "1561984433618694144",
+      "variantSku": "CJMY154835401AZ",
+      "variantKey": "As shown-1pcs",
+      "variantSellPrice": 0.60
+    },
+    {
+      "vid": "2506170616321605300",
+      "pid": "1561984433618694144",
+      "variantSku": "CJMY154835404DW",
+      "variantKey": "As shown-10pcs",
+      "variantSellPrice": 3.16
+    }
+  ],
+  "requestId": "variant-request"
+}
