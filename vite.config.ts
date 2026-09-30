@@ -14,7 +14,7 @@ export default defineConfig(({ mode, command }) => {
     "default-src 'none'",
     "script-src 'self'",
     "style-src 'self'",
-    "img-src 'self' data: https://*.cjdropshipping.com",
+    "img-src 'self' data: https://*.cjdropshipping.com https://*.aliyuncs.com",
     "font-src 'self'",
     `connect-src ${connectSources}`,
     "object-src 'none'",

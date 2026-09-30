@@ -64,7 +64,11 @@ The bounded **CJ product-by-ID ingestion** slice is implemented as follows:
 3. Contract and PostgreSQL tests prove repeat imports do not duplicate identities, unknown values remain null, browser roles cannot execute ingestion, and invalid variant batches roll back.
 4. `npm run cj:import -- PRODUCT_ID_OR_URL` runs the slice from a trusted machine with server-only credentials.
 
-The migration is deployed, a real CJ candidate is imported, and the dashboard read model shows supplier cost, variant count, stock, freshness, and source. Next, persist scheduled discovery runs and enrich shortlisted products with destination-specific shipping facts before adding authenticated review and Shopify draft creation.
+The ingestion migration is deployed, a real CJ candidate is imported, and the dashboard read model shows supplier cost, variant count, stock, freshness, source, and image.
+
+Discovery V2 now has a provider-neutral application entry point with configurable profiles, deterministic and optional local-model query expansion, explicit strategy budgets, controlled pagination, occurrence provenance, partial-failure handling, relevance levels, separate eligibility, and versioned score components. A service-role-only transaction persists run metadata, queries, candidate assessments, supplier observations, and private raw pages. The browser reads only normalized discovery records through RLS. The Discovery V2 migration must be applied to hosted Supabase before running the persistent command.
+
+Scheduling, external market validation, destination shipping, economics, maintenance, channel publishing, fulfillment, and external-orchestrator integration remain separate future layers.
 
 The first read-only discovery/ranking slice and the planned scraping boundaries are documented in [Product discovery and search](discovery.md).
 

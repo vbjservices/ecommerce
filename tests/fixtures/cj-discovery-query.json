@@ -27,7 +27,13 @@
             "createAt": 1740787200000,
             "warehouseInventoryNum": 5100,
             "totalVerifiedInventory": 5000,
+            "totalUnVerifiedInventory": 100,
             "customization": 0,
+            "isPersonalized": 0,
+            "hasCECertification": 1,
+            "productType": "ORDINARY_PRODUCT",
+            "saleStatus": "3",
+            "authorityStatus": "1",
             "deliveryCycle": "3-5"
           },
           {
@@ -46,7 +52,13 @@
             "createAt": 1609459200000,
             "warehouseInventoryNum": 600,
             "totalVerifiedInventory": 100,
+            "totalUnVerifiedInventory": 500,
             "customization": 0,
+            "isPersonalized": 0,
+            "hasCECertification": 0,
+            "productType": "ORDINARY_PRODUCT",
+            "saleStatus": "3",
+            "authorityStatus": "1",
             "deliveryCycle": "9-12"
           }
         ],

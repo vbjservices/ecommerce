@@ -2,7 +2,7 @@ import './styles.css';
 import { readPublicConfig } from './config';
 import { createBrowserDatabase } from './supabase';
 import { checkAccess } from './auth';
-import { readRecentCandidates } from './workspace-repository';
+import { readRecentCandidates, readRecentDiscoveryCandidates } from './workspace-repository';
 import { isWorkspaceSnapshotFresh, type WorkspaceSnapshot } from './workspace-cache';
 
 const app = document.querySelector<HTMLElement>('#app')!;
@@ -121,16 +121,113 @@ async function start() {
     } catch { return null; }
   }
 
+  function renderDiscoveryCandidates(current: WorkspaceSnapshot) {
+    const list = app.querySelector('.discovery-candidates')!;
+    if (!current.discoveryCandidates.length) {
+      list.innerHTML = '<div class="empty compact"><h3>No Discovery V2 runs yet</h3><p>Run the trusted discovery command after applying its migration.</p></div>';
+      return;
+    }
+    const ul = document.createElement('ul');
+    ul.className = 'discovery-list';
+    for (const candidate of current.discoveryCandidates) {
+      const li = document.createElement('li');
+      li.className = 'discovery-card';
+      const imageFrame = document.createElement('div');
+      imageFrame.className = 'discovery-image';
+      const fallback = document.createElement('span');
+      fallback.textContent = 'No image';
+      const imageUrl = safeSourceUrl(candidate.image_url);
+      if (imageUrl) {
+        const image = document.createElement('img');
+        image.src = imageUrl;
+        image.alt = candidate.title;
+        image.loading = 'lazy';
+        image.decoding = 'async';
+        image.referrerPolicy = 'no-referrer';
+        image.addEventListener('error', () => { imageFrame.replaceChildren(fallback); }, { once: true });
+        imageFrame.append(image);
+      } else imageFrame.append(fallback);
+      const body = document.createElement('div');
+      body.className = 'discovery-body';
+      const heading = document.createElement('div');
+      heading.className = 'candidate-heading';
+      const identity = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = candidate.title;
+      const context = document.createElement('p');
+      context.className = 'candidate-supplier';
+      context.textContent = `${candidate.suppliers.name} · “${candidate.discovery_runs.original_query}” · ${candidate.discovery_runs.profile_id}`;
+      identity.append(title, context);
+      const eligibility = document.createElement('span');
+      eligibility.className = `badge eligibility-${candidate.eligibility_status}`;
+      eligibility.textContent = candidate.eligibility_status;
+      heading.append(identity, eligibility);
+      const facts = document.createElement('dl');
+      facts.className = 'candidate-facts discovery-facts';
+      const strategyCount = new Set(candidate.discovery_occurrences.map((item) => item.strategy)).size;
+      facts.append(
+        metric('Score', String(Math.round(Number(candidate.score)))),
+        metric('Confidence', `${Math.round(Number(candidate.confidence))}%`),
+        metric('Coverage', `${Math.round(Number(candidate.coverage))}%`),
+        metric('Relevance', candidate.relevance_level),
+        metric('Strategies', String(strategyCount)),
+      );
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = 'Why this product?';
+      details.append(summary);
+      for (const [label, values] of [
+        ['Positive', candidate.assessment.positiveEvidence],
+        ['Review', [
+          ...candidate.assessment.eligibility.reasons,
+          ...candidate.assessment.risks.map((risk) => risk.explanation),
+        ]],
+        ['Unknown', candidate.assessment.unknownEvidence],
+      ] as const) {
+        if (!values.length) continue;
+        const group = document.createElement('div');
+        group.className = 'evidence-group';
+        const labelElement = document.createElement('b');
+        labelElement.textContent = label;
+        const evidenceList = document.createElement('ul');
+        for (const value of [...new Set(values)]) {
+          const item = document.createElement('li');
+          item.textContent = value;
+          evidenceList.append(item);
+        }
+        group.append(labelElement, evidenceList);
+        details.append(group);
+      }
+      body.append(heading, facts, details);
+      const sourceUrl = safeSourceUrl(candidate.source_url);
+      if (sourceUrl) {
+        const link = document.createElement('a');
+        link.className = 'source-link';
+        link.href = sourceUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'View supplier product ↗';
+        body.append(link);
+      }
+      li.append(imageFrame, body);
+      ul.append(li);
+    }
+    list.append(ul);
+  }
+
   function renderWorkspace(current: WorkspaceSnapshot, status = `Updated ${cacheTime(current.fetchedAt)}`) {
     const { access, candidates } = current;
     app.innerHTML = `<section class="workspace"><div class="workspace-heading"><div><p class="eyebrow">Overview</p><h1>Product workspace</h1></div><div class="actions"></div></div>
-      <p class="account"></p><section class="panel"><div class="section-heading"><h2>Recent candidates</h2><span class="badge">Read only</span></div>
+      <p class="account"></p><section class="panel discovery-panel"><div class="section-heading"><h2>Discovery V2 shortlist</h2><span class="badge">Evidence ranked</span></div>
+      <div class="discovery-candidates"></div></section>
+      <section class="panel"><div class="section-heading"><h2>Imported candidates</h2><span class="badge">Read only</span></div>
       <div class="candidates"></div></section><p class="footnote refresh-status" role="status"></p>
       <p class="footnote">Costs and stock are supplier snapshots. Shipping, market demand, and margin still need enrichment before review.</p></section>`;
     app.querySelector('.account')!.textContent = `Signed in as ${access.email}`;
     app.querySelector('.refresh-status')!.textContent = status;
     action('Refresh', () => { void refresh({ force: true, background: true }); });
     action('Sign out', () => { void signOut(); });
+    renderDiscoveryCandidates(current);
     const list = app.querySelector('.candidates')!;
     if (!candidates.length) {
       list.innerHTML = '<div class="empty"><span class="empty-mark" aria-hidden="true">＋</span><h3>No candidates yet</h3><p>Products will appear here after the first supplier import.</p></div>';
@@ -219,9 +316,12 @@ async function start() {
         action('Sign out', () => { void signOut(); });
         return;
       }
-      const candidates = await readRecentCandidates(client);
+      const [candidates, discoveryCandidates] = await Promise.all([
+        readRecentCandidates(client),
+        readRecentDiscoveryCandidates(client),
+      ]);
       if (current !== revision) return;
-      snapshot = { access, candidates, fetchedAt: Date.now() };
+      snapshot = { access, candidates, discoveryCandidates, fetchedAt: Date.now() };
       renderWorkspace(snapshot);
     } catch (error) {
       if (current !== revision) return;

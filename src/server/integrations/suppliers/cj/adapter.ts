@@ -55,7 +55,13 @@ const discoveryProduct = z.object({
   createAt: z.number().finite().nullish(),
   warehouseInventoryNum: z.number().int().nonnegative().nullish(),
   totalVerifiedInventory: z.number().int().nonnegative().nullish(),
+  totalUnVerifiedInventory: z.number().int().nonnegative().nullish(),
   customization: z.number().int().nullish(),
+  isPersonalized: z.number().int().nullish(),
+  hasCECertification: z.number().int().nullish(),
+  productType: z.string().nullish(),
+  saleStatus: z.union([z.string(), z.number()]).nullish(),
+  authorityStatus: z.union([z.string(), z.number()]).nullish(),
   deliveryCycle: z.string().nullish(),
 }).passthrough();
 
@@ -193,6 +199,18 @@ export class CjSupplierAdapter implements SupplierAdapter {
     if (maxCost) params.set('endSellPrice', maxCost);
     if (minInventory !== undefined) params.set('startWarehouseInventory', String(minInventory));
     if (input.filters?.verifiedOnly) params.set('verifiedWarehouse', '1');
+    if (input.filters?.productFlag) params.set('productFlag', ({
+      trending: '0', new: '1', video: '2', slow_moving: '3',
+    } as const)[input.filters.productFlag]);
+    if (input.filters?.freeShipping !== undefined) {
+      params.set('addMarkStatus', input.filters.freeShipping ? '1' : '0');
+    }
+    if (input.filters?.hasCertification !== undefined) {
+      params.set('hasCertification', input.filters.hasCertification ? '1' : '0');
+    }
+    if (input.filters?.customizable !== undefined) {
+      params.set('customization', input.filters.customizable ? '1' : '0');
+    }
 
     const response = await this.client.get(`/product/listV2?${params}`);
     const parsed = discoveryData.safeParse(response.data);
@@ -209,6 +227,7 @@ export class CjSupplierAdapter implements SupplierAdapter {
       listedCount: product.listedNum ?? null,
       inventory: product.warehouseInventoryNum ?? null,
       verifiedInventory: product.totalVerifiedInventory ?? null,
+      unverifiedInventory: product.totalUnVerifiedInventory ?? null,
       createdAt: product.createAt === null || product.createAt === undefined
         ? null
         : new Date(product.createAt).toISOString(),
@@ -219,6 +238,15 @@ export class CjSupplierAdapter implements SupplierAdapter {
         ? null : product.addMarkStatus === 1,
       customizable: product.customization === null || product.customization === undefined
         ? null : product.customization === 1,
+      personalized: product.isPersonalized === null || product.isPersonalized === undefined
+        ? null : product.isPersonalized === 1,
+      hasCertification: product.hasCECertification === null || product.hasCECertification === undefined
+        ? null : product.hasCECertification === 1,
+      productType: product.productType?.trim() || null,
+      saleStatus: product.saleStatus === null || product.saleStatus === undefined
+        ? null : String(product.saleStatus) === '3' ? 'on_sale' as const : 'not_on_sale' as const,
+      visible: product.authorityStatus === null || product.authorityStatus === undefined
+        ? null : String(product.authorityStatus) === '1',
     }));
     return {
       products,

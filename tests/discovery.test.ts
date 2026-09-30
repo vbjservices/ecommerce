@@ -27,13 +27,21 @@ test('CJ discovery maps documented search facts and ranking stays explainable', 
     query: 'cat toy',
     limit: 2,
     sortBy: 'listings',
-    filters: { maxCost: '25', minInventory: 100, verifiedOnly: true },
+    filters: {
+      maxCost: '25', minInventory: 100, verifiedOnly: true,
+      productFlag: 'trending', freeShipping: true,
+      hasCertification: true, customizable: false,
+    },
   });
   const request = new URL(calls[1]!);
   assert.equal(request.pathname, '/product/listV2');
   assert.equal(request.searchParams.get('keyWord'), 'cat toy');
   assert.equal(request.searchParams.get('orderBy'), '1');
   assert.equal(request.searchParams.get('verifiedWarehouse'), '1');
+  assert.equal(request.searchParams.get('productFlag'), '0');
+  assert.equal(request.searchParams.get('addMarkStatus'), '1');
+  assert.equal(request.searchParams.get('hasCertification'), '1');
+  assert.equal(request.searchParams.get('customization'), '0');
   assert.equal(snapshot.nextCursor, '2');
   assert.equal(snapshot.totalResults, 3);
   assert.deepEqual(snapshot.products[0], {
@@ -47,11 +55,17 @@ test('CJ discovery maps documented search facts and ranking stays explainable', 
     listedCount: 740,
     inventory: 5100,
     verifiedInventory: 5000,
+    unverifiedInventory: 100,
     createdAt: '2025-03-01T00:00:00.000Z',
     deliveryDays: { min: 3, max: 5 },
     hasVideo: true,
     freeShipping: false,
     customizable: false,
+    personalized: false,
+    hasCertification: true,
+    productType: 'ORDINARY_PRODUCT',
+    saleStatus: 'on_sale',
+    visible: true,
   });
 
   const ranked = rankSupplierDiscoveryProducts(snapshot.products, undefined,
@@ -79,11 +93,17 @@ test('multi-term discovery merges provider results before applying strict releva
     listedCount: 100,
     inventory: 500,
     verifiedInventory: 500,
+    unverifiedInventory: 0,
     createdAt: '2026-01-01T00:00:00Z',
     deliveryDays: { min: 3, max: 5 },
     hasVideo: false,
     freeShipping: false,
     customizable: false,
+    personalized: false,
+    hasCertification: false,
+    productType: 'ORDINARY_PRODUCT',
+    saleStatus: 'on_sale',
+    visible: true,
   });
   const shared = product('shared', 'Interactive Cat Toys');
   const adapter = {

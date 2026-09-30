@@ -1,11 +1,12 @@
 import type { Access } from './auth';
-import type { CandidateSummary } from './workspace-repository';
+import type { CandidateSummary, DiscoveryCandidateSummary } from './workspace-repository';
 
 export const WORKSPACE_CACHE_TTL_MS = 5 * 60 * 1_000;
 
 export interface WorkspaceSnapshot {
   access: Extract<Access, { status: 'authorized' }>;
   candidates: CandidateSummary[];
+  discoveryCandidates: DiscoveryCandidateSummary[];
   fetchedAt: number;
 }
 

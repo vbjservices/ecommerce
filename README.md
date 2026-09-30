@@ -18,6 +18,7 @@ Trusted CJ tools use server-only environment values:
 ```sh
 npm run cj:search -- "cat toy"   # ranked preview; no database writes
 npm run cj:import -- PRODUCT_ID  # atomic candidate ingestion
+npm run cj:discover -- "cat toy" --profile=pets  # budgeted V2 run persisted to Supabase
 ```
 
 See [product discovery and search](docs/discovery.md) for current behavior and the [Discovery V2 implementation specification](docs/discovery-v2-implementation-spec.md) for the approved next-stage brief.
@@ -59,8 +60,8 @@ Tests run migrations in ephemeral PostgreSQL through PGlite with a minimal Supab
 
 ## Scope
 
-Implemented: sign-in/out and session checks, explicit internal membership, five-minute in-memory workspace caching, quiet stale refreshes, a restrictive production Content Security Policy, supplier-fact candidate cards, neutral domain/adapter contracts, CJ product/variant/inventory reads, rate-limited CJ catalog search, explainable discovery ranking, atomic idempotent supplier ingestion, source-ID mappings, private historical raw snapshots, migrations, and security tests.
+Implemented: sign-in/out and session checks, explicit internal membership, five-minute in-memory workspace caching, quiet stale refreshes, a restrictive production Content Security Policy, supplier-fact candidate cards, neutral domain/adapter contracts, CJ product/variant/inventory reads, atomic idempotent supplier ingestion, and Discovery V2 foundations: configurable niche profiles, original-intent query planning, controlled deterministic expansion, optional Ollama expansion, budgeted multi-strategy pagination, provenance-preserving deduplication, separate relevance/eligibility/scoring, score/confidence/coverage, durable discovery runs, timestamped supplier observations, private raw snapshots, and an explainable dashboard shortlist.
 
-Deferred: durable scheduled discovery runs, external research/scraping adapters, shipping quotes, approval writes/audit workflow, listing persistence, order persistence, webhooks, queues, purchasing, fulfillment, and tracking. There is no public signup or multi-tenant system.
+Deferred: scheduling, external research/scraping adapters, destination shipping quotes, landed-cost economics, approval writes/audit workflow, listing persistence, order persistence, webhooks, queues, purchasing, fulfillment, maintenance, and tracking. There is no public signup or multi-tenant system.
 
-Next: persist scheduled discovery runs and source observations, then enrich the shortlist with Netherlands shipping quotes before human review.
+Next: calibrate Discovery V2 with real runs and operator feedback, then add shortlist enrichment and Netherlands shipping quotes before human review.

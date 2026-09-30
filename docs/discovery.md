@@ -1,70 +1,119 @@
 # Product discovery and search
 
-Discovery is a staged evidence pipeline. A supplier listing count or a high internal score is not proof that a product will sell.
+Discovery is a staged evidence pipeline. A supplier listing count or a high internal score is not proof that a product will sell. The detailed direction and full definition of done remain in the [Product discovery V2 implementation specification](discovery-v2-implementation-spec.md).
 
-The detailed, approved direction for the next discovery iteration is preserved in the [Product discovery V2 implementation specification](discovery-v2-implementation-spec.md). This document describes current behavior and near-term sequencing; the V2 specification describes proposed behavior and its full definition of done.
+## Commands
 
-## Current slice
-
-The CJ adapter uses the official API V2 `product/listV2` endpoint for catalog search. It normalizes product ID, title, supplier SKU, category, USD cost range, listing count, warehouse inventory, verified inventory, creation time, delivery cycle, and basic media/fulfillment flags.
-
-Run a trusted, read-only search with:
+The legacy preview remains available during rollout:
 
 ```sh
 npm run cj:search -- "cat toy"
 ```
 
-The command:
+It searches individual terms, ranks the in-memory results with the original V1 formula, prints ten rows, and writes nothing.
 
-1. Searches each meaningful term separately to improve recall.
-2. Merges results by CJ product ID.
-3. Requires the original meaningful terms to match normalized title/category data.
-4. Requires known listing count, cost, and total inventory before a result is eligible.
-5. Produces an explainable score, evidence coverage, and risk reasons.
-6. Does not import, approve, publish, or purchase anything.
+The durable V2 entry point is:
 
-CJ calls are centrally paced for entry-level account limits. Repeated scheduled searches should later be cached as durable discovery runs so the worker does not spend API points retrieving unchanged pages.
+```sh
+npm run cj:discover -- "cat toy" --profile=pets
+```
 
-## Ranking model
+It requires the Discovery V2 migration and trusted `CJ_API_KEY`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` values. The `--profile` option accepts `generic`, `pets`, or `home-products`. Profiles configure synonyms, exclusions, category hints, thresholds, enabled reusable risk rules, and scoring weights; the pipeline contains no pet-specific branches.
 
-The first-pass score uses only observable supplier facts:
+`OLLAMA_BASE_URL` and `OLLAMA_MODEL` optionally enable local-model query expansion. Both are server-only settings. Deterministic expansion always runs, model output is schema-validated and bounded, and an unavailable or malformed model produces a warning without stopping supplier discovery.
 
-| Component | Weight | Meaning |
+## Query planning and acquisition
+
+V2 preserves the normalized original phrase as the first and strongest search. Unicode accents, case, punctuation, whitespace, stop words, and duplicate terms are normalized deterministically. Safe singular handling replaces the old generated plural forms.
+
+The configured profile can produce a bounded set of synonym expansions. Search plans can then use these CJ-supported strategies:
+
+- original phrase by relevance;
+- original phrase by listing activity;
+- original phrase by inventory;
+- controlled expanded queries;
+- original query tokens for recall;
+- CJ's trending product flag;
+- CJ's new-product flag.
+
+CJ Product List V2 remains behind the supplier adapter. It supports cursor pages, page sizes up to 100, category/country/price/inventory filters, listing/price/creation/inventory sorting, and documented product flags. The normalized domain also records sale visibility, unverified inventory, certification, personalization, and product type when CJ supplies them.
+
+The default run budget is:
+
+| Budget | Default |
+| --- | ---: |
+| API requests | 12 |
+| Pages per strategy | 2 |
+| Raw product rows | 300 |
+| Page size | 50 |
+| Detail enrichments | 0 |
+
+Completed runs are cached for six hours by default using supplier, normalized query, profile, configuration version, and scoring version. Repeating the same command reuses the fresh run without spending CJ requests. Pass `--refresh` to deliberately collect a new observation:
+
+```sh
+npm run cj:discover -- "cat toy" --profile=pets --refresh
+```
+
+The application stops when a budget is reached, a source is exhausted, or a later page contains at least 90% duplicates. A failed strategy becomes a sanitized run warning; successful strategies are retained. If no page succeeds, the run is marked failed.
+
+Products are deduplicated by supplier product ID. Every occurrence retains strategy, query, query source, page, rank, sort, filters, source, and retrieval time. Repeated discovery is provenance, not independent consumer-demand evidence.
+
+## Relevance and eligibility
+
+Relevance compares original query concepts with normalized supplier title, category, and SKU facts plus controlled profile synonyms. It returns one of:
+
+```text
+EXACT → STRONG → RELATED → WEAK → IRRELEVANT
+```
+
+It also records matched concepts, missing concepts, synonym matches, profile exclusions, and human-readable reasons.
+
+Eligibility is independent from scoring:
+
+- `PASS` meets the current supplier-side gates;
+- `REVIEW` has related relevance, missing core evidence, weak supplier activity, or a reviewable risk;
+- `FAIL` has weak relevance, a profile exclusion, a blocking risk, a non-sellable/non-visible state, excessive known cost, or inadequate known inventory.
+
+Failed candidates remain persisted for observability instead of disappearing silently.
+
+## Versioned opportunity assessment
+
+The current scoring version is `supplier-opportunity-v2.0`. Every component records its raw value, normalized value, weight, contribution, source, retrieval time, and explanation.
+
+| Dimension | Weight | Meaning |
 | --- | ---: | --- |
-| Query relevance | 25 | Meaningful search terms match title/category/SKU facts |
-| Listing activity | 20 | Log-scaled CJ listing count; a demand proxy, not sales |
-| Verified inventory | 15 | Log-scaled stock CJ marks as verified; unverified factory stock carries a visible risk |
-| Cost fit | 15 | Supplier cost fits the configured research band |
-| Freshness | 10 | More recently created supplier listings score higher |
-| Fulfillment | 10 | Shorter reported supplier delivery cycles score higher |
-| Media readiness | 5 | Image and video availability |
+| Relevance | 25 | Original intent, direct concepts, controlled synonyms, and category consistency |
+| Supplier activity | 15 | Log-scaled CJ listing activity; never labelled as sales |
+| Inventory health | 15 | Verified inventory depth and verified share |
+| Cost fit | 15 | Supplier cost midpoint against the configured research range |
+| Freshness | 10 | Supplier listing age over a three-year scoring window |
+| Fulfillment readiness | 10 | Supplier-reported delivery cycle |
+| Creative asset readiness | 5 | Supplier image and video availability |
+| Operational simplicity | 5 | Current customization complexity signal |
 
-Missing facts reduce evidence coverage. Core missing facts block eligibility rather than silently becoming zero. Risk terms and operational complexity apply visible penalties and review labels. Weights and thresholds remain configuration, not hidden AI judgment.
+Missing evidence contributes no points. `coverage` is the percentage of configured weight with evidence. `confidence` further discounts coverage when inventory is mostly unverified. `score`, `confidence`, and `coverage` remain separate dashboard fields. Rule-based risks apply transparent penalties and explicit `INFO`, `REVIEW`, `HIGH_RISK`, or `BLOCK` severity.
 
-## Recommended worker pipeline
+Every assessment explicitly says that external consumer demand, destination shipping, retail pricing, advertising cost, and profitability remain unknown.
 
-1. **Acquire:** query configured terms, CJ categories, trending products, new products, and inventory-sorted pages on a schedule.
-2. **Deduplicate:** use supplier product IDs first. Later add cross-supplier similarity without merging identities automatically.
-3. **Gate:** require on-sale visibility, known cost, verified inventory, acceptable risk category, and minimum evidence coverage.
-4. **Enrich the shortlist:** fetch full variants and stock, then obtain destination-specific shipping quotes for the Netherlands.
-5. **Research externally:** collect trend history, ad activity, review quality, competitor prices, and saturation through separate source adapters.
-6. **Score transparently:** store every component, source, retrieval time, coverage, and exclusion reason.
-7. **Create candidates:** ingest only the strongest bounded shortlist for human review.
+## Persistence and dashboard
 
-Supplier listing count must be labelled as listing activity. It is not order volume or revenue. Shipping and margin should remain unknown until the relevant quote and target selling price are available.
+One service-role-only PostgreSQL RPC atomically persists:
 
-## Scraping policy and structure
+- `discovery_runs` with profile, versions, status, budgets, metrics, and warnings;
+- `discovery_queries` with expansion source, confidence, and reason;
+- `discovery_candidates` with eligibility, relevance, score, confidence, coverage, and the versioned assessment;
+- `discovery_occurrences` with complete acquisition provenance;
+- `supplier_product_observations` with timestamped supplier cost, activity, inventory, delivery, and visibility facts;
+- `private.discovery_snapshots` with raw source pages.
 
-CJ product facts should come from its API. HTML scraping is reserved for useful sources without a suitable API, subject to their access rules.
+Internal browser users can read normalized public records through RLS and cannot write them. Raw pages remain inaccessible to browser roles and append-only for the service role. Invalid persistence batches roll back completely.
 
-Each scraper belongs behind its own adapter and must:
+The dashboard shows the most recent V2 shortlist with supplier image, original query, profile, eligibility, score, confidence, coverage, relevance, strategy count, structured positive evidence, review reasons, risks, unknowns, and the safe supplier link. The dashboard remains compatible while the additive migration is pending.
 
-- identify its source and collection time;
-- rate-limit and cache requests;
-- preserve restricted raw snapshots;
-- detect layout/schema changes and fail visibly;
-- distinguish missing facts from zero;
-- avoid bypassing authentication, access controls, or anti-bot protections;
-- never write directly to candidate scores or product tables.
+## Current limits and next work
 
-The next persistence slice should add discovery runs and observations before scheduled scraping begins. That gives us cache keys, history, retry state, source health, and enough data to measure velocity instead of repeatedly collecting one current number.
+CJ listing activity is not verified sales. CJ Trending is not proof of market demand. CJ inventory is not consumer popularity. External demand is not measured, and profitability is not proven.
+
+This slice does not schedule recurring runs, request destination shipping quotes, calculate landed cost, scrape market sources, publish products, maintain listings, purchase inventory, fulfill orders, or integrate with the external orchestrator.
+
+The next discovery work should use real persisted runs to calibrate thresholds and scoring, add bounded full-product enrichment for shortlisted candidates, and improve the dashboard's run-level filtering. Market validation and Netherlands shipping/economics remain later workflows with their own evidence sources.

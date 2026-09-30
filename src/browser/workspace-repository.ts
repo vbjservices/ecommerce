@@ -19,6 +19,37 @@ const candidateSummary = z.object({
 });
 export type CandidateSummary = z.infer<typeof candidateSummary>;
 
+const discoveryCandidateSummary = z.object({
+  id: z.uuid(),
+  rank: z.number().int().positive(),
+  title: z.string(),
+  image_url: z.string().nullable(),
+  source_url: z.string().nullable(),
+  eligibility_status: z.enum(['pass', 'review', 'fail']),
+  relevance_level: z.enum(['exact', 'strong', 'related', 'weak', 'irrelevant']),
+  score: z.union([z.number(), z.string()]),
+  confidence: z.union([z.number(), z.string()]),
+  coverage: z.union([z.number(), z.string()]),
+  suppliers: z.object({ name: z.string() }),
+  discovery_runs: z.object({
+    original_query: z.string(),
+    profile_id: z.string(),
+    completed_at: z.string(),
+  }),
+  discovery_occurrences: z.array(z.object({ strategy: z.string() })),
+  assessment: z.object({
+    positiveEvidence: z.array(z.string()),
+    unknownEvidence: z.array(z.string()),
+    eligibility: z.object({ reasons: z.array(z.string()) }),
+    risks: z.array(z.object({
+      ruleId: z.string(),
+      severity: z.string(),
+      explanation: z.string(),
+    })),
+  }),
+});
+export type DiscoveryCandidateSummary = z.infer<typeof discoveryCandidateSummary>;
+
 /** A narrow, RLS-protected read model; no raw payloads or browser workflow writes. */
 export async function readRecentCandidates(client: SupabaseClient): Promise<CandidateSummary[]> {
   const result = await client.from('product_candidates')
@@ -47,5 +78,24 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
   if (error) throw new Error('Candidates could not be loaded. Please try again.');
   const parsed = z.array(candidateSummary).safeParse(data);
   if (!parsed.success) throw new Error('The workspace data is not in the expected format. Contact an administrator.');
+  return parsed.data;
+}
+
+/** V2 discovery results are optional during the additive schema rollout. */
+export async function readRecentDiscoveryCandidates(
+  client: SupabaseClient,
+): Promise<DiscoveryCandidateSummary[]> {
+  const result = await client.from('discovery_candidates')
+    .select(`id,rank,title,image_url,source_url,eligibility_status,relevance_level,
+      score,confidence,coverage,assessment,suppliers!inner(name),
+      discovery_runs!inner(original_query,profile_id,completed_at),
+      discovery_occurrences(strategy)`)
+    .order('created_at', { ascending: false })
+    .order('rank', { ascending: true })
+    .limit(20);
+  if (result.error?.code === '42P01' || result.error?.code === 'PGRST205') return [];
+  if (result.error) throw new Error('Discovery results could not be loaded. Please try again.');
+  const parsed = z.array(discoveryCandidateSummary).safeParse(result.data);
+  if (!parsed.success) throw new Error('The discovery data is not in the expected format. Contact an administrator.');
   return parsed.data;
 }

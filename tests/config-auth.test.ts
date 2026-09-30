@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { readPublicConfig } from '../src/browser/config';
-import { readCjConfig, readServerConfig } from '../src/server/config';
+import { readCjConfig, readOptionalOllamaConfig, readServerConfig } from '../src/server/config';
 import { checkAccess } from '../src/browser/auth';
-import { readRecentCandidates } from '../src/browser/workspace-repository';
+import { readRecentCandidates, readRecentDiscoveryCandidates } from '../src/browser/workspace-repository';
 import { isWorkspaceSnapshotFresh, WORKSPACE_CACHE_TTL_MS, type WorkspaceSnapshot } from '../src/browser/workspace-cache';
 
 const publicEnv = { PUBLIC_SUPABASE_URL: 'https://example.supabase.co', PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_TEST_ONLY' };
@@ -24,6 +24,11 @@ test('configuration fails clearly without echoing values or accepting privileged
   assert.throws(() => readServerConfig({ SUPABASE_URL: publicEnv.PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY: jwt('anon') }), /must be a secret/);
   assert.throws(() => readCjConfig({}), /Missing CJ_API_KEY/);
   assert.equal(readCjConfig({ CJ_API_KEY: 'private-cj-key' }).apiKey, 'private-cj-key');
+  assert.equal(readOptionalOllamaConfig({}), null);
+  assert.deepEqual(readOptionalOllamaConfig({ OLLAMA_BASE_URL: 'http://127.0.0.1:11434', OLLAMA_MODEL: 'local-5b' }), {
+    baseUrl: 'http://127.0.0.1:11434', model: 'local-5b',
+  });
+  assert.throws(() => readOptionalOllamaConfig({ OLLAMA_BASE_URL: 'http://127.0.0.1:11434' }), /configured together/);
 });
 
 function authClient(session: boolean, user: boolean, membership: boolean, rpcError = false) {
@@ -104,11 +109,46 @@ test('repository stays readable during the additive product image migration', as
   assert.equal(calls, 2);
 });
 
+test('discovery read model tolerates an undeployed migration and validates deployed rows', async () => {
+  const client = (data: unknown, error: unknown) => ({
+    from: () => ({ select: () => ({ order: () => ({ order: () => ({
+      limit: async () => ({ data, error }),
+    }) }) }) }),
+  }) as unknown as SupabaseClient;
+  assert.deepEqual(await readRecentDiscoveryCandidates(client(null, { code: '42P01' })), []);
+  await assert.rejects(readRecentDiscoveryCandidates(client([{ score: 'invalid' }], null)), /expected format/);
+  const row = {
+    id: '00000000-0000-4000-8000-000000000020',
+    rank: 1,
+    title: 'Interactive Cat Toy',
+    image_url: null,
+    source_url: 'https://example.com/product',
+    eligibility_status: 'pass',
+    relevance_level: 'exact',
+    score: '82.00',
+    confidence: '90.00',
+    coverage: '95.00',
+    suppliers: { name: 'Supplier' },
+    discovery_runs: {
+      original_query: 'cat toy', profile_id: 'pets', completed_at: '2026-09-30T10:00:00Z',
+    },
+    discovery_occurrences: [{ strategy: 'original_query' }],
+    assessment: {
+      positiveEvidence: ['Strong relevance.'],
+      unknownEvidence: ['External demand is unknown.'],
+      eligibility: { reasons: ['Passes current gates.'] },
+      risks: [],
+    },
+  };
+  assert.deepEqual(await readRecentDiscoveryCandidates(client([row], null)), [row]);
+});
+
 test('workspace cache is page-memory only and expires after five minutes', () => {
   const fetchedAt = 1_000_000;
   const snapshot: WorkspaceSnapshot = {
     access: { status: 'authorized', userId: '00000000-0000-4000-8000-000000000001', email: 'test@example.com' },
     candidates: [],
+    discoveryCandidates: [],
     fetchedAt,
   };
   assert.equal(isWorkspaceSnapshotFresh(snapshot, fetchedAt), true);

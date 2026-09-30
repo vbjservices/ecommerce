@@ -47,9 +47,15 @@ export interface SupplierDiscoveryProduct {
   listedCount: number | null;
   inventory: number | null;
   verifiedInventory: number | null;
+  unverifiedInventory: number | null;
   createdAt: Timestamp | null;
   deliveryDays: { min: number; max: number } | null;
   hasVideo: boolean | null;
   freeShipping: boolean | null;
   customizable: boolean | null;
+  personalized: boolean | null;
+  hasCertification: boolean | null;
+  productType: string | null;
+  saleStatus: 'on_sale' | 'not_on_sale' | null;
+  visible: boolean | null;
 }

@@ -51,7 +51,9 @@ Copy `.env.example` to the ignored `.env.local`. Set:
 | `PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser-safe publishable key; legacy anon also accepted |
 | `SUPABASE_URL` | Same project URL, only needed for trusted server tools |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server secret or legacy service-role key, only for trusted tools |
-| `CJ_API_KEY` | CJ API key, only needed for trusted CJ ingestion |
+| `CJ_API_KEY` | CJ API key, only needed for trusted CJ ingestion and discovery |
+| `OLLAMA_BASE_URL` | Optional Ollama HTTP(S) origin for query expansion, such as `http://127.0.0.1:11434` |
+| `OLLAMA_MODEL` | Optional local model name; configure together with `OLLAMA_BASE_URL` |
 
 Leave server-only fields empty when working only on the dashboard. Public configuration is intentionally visible in browser JavaScript. Never put privileged credentials in any `PUBLIC_` variable. The build exposes exactly the two named public variables and rejects privileged key formats in the public key field. `.env.example` must remain names with empty assignments.
 
@@ -84,9 +86,10 @@ Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `CJ_API_KEY` in the ignored
 ```sh
 npm run cj:search -- "catnip"
 npm run cj:import -- 1561984433618694144
+npm run cj:discover -- "cat toy" --profile=pets
 ```
 
-Search is read-only and does not import its ranked results. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
+`cj:search` is the legacy read-only preview and does not persist results. `cj:discover` executes the budgeted V2 pipeline and atomically persists its run, query plan, ranked candidates, occurrences, normalized observations, and private raw pages. Apply `20260930000200_discovery_runs.sql` before using it. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
 
 ## 6. Publish using the existing Pages setting
 

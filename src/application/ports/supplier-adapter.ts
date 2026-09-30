@@ -21,6 +21,10 @@ export interface SupplierDiscoveryInput {
     maxCost?: string;
     minInventory?: number;
     verifiedOnly?: boolean;
+    productFlag?: 'trending' | 'new' | 'video' | 'slow_moving';
+    freeShipping?: boolean;
+    hasCertification?: boolean;
+    customizable?: boolean;
   };
 }
 

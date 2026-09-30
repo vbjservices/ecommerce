@@ -4,7 +4,7 @@
 **Scope:** Product discovery only  
 **Source:** User-approved planning prompt preserved on 2026-09-30
 
-This is the durable brief for the next substantial discovery iteration. It records desired behavior, architectural boundaries, staged implementation guidance, testing requirements, and the definition of done. It is not a claim that every capability below is already implemented. For current behavior, read [Product discovery and search](discovery.md). Before implementation, validate CJ-specific assumptions against the current official API and document any discrepancy.
+This is the durable brief for the next substantial discovery iteration. It records desired behavior, architectural boundaries, staged implementation guidance, testing requirements, and the definition of done. It is not a claim that every capability below is already implemented. For current behavior, read [Product discovery and search](discovery.md); for the implementation checklist, read [Discovery V2 progress](discovery-v2-progress.md). Before implementation, validate CJ-specific assumptions against the current official API and document any discrepancy.
 
 ---
 
