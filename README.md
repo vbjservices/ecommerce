@@ -20,7 +20,7 @@ npm run cj:search -- "cat toy"   # ranked preview; no database writes
 npm run cj:import -- PRODUCT_ID  # atomic candidate ingestion
 ```
 
-See [product discovery and search](docs/discovery.md) for ranking, caching, and scraping direction.
+See [product discovery and search](docs/discovery.md) for current behavior and the [Discovery V2 implementation specification](docs/discovery-v2-implementation-spec.md) for the approved next-stage brief.
 
 Without configuration the page displays **Workspace setup pending**. To enable sign-in, follow [Supabase setup](docs/setup.md). No demo credentials, users, or business records are created.
 

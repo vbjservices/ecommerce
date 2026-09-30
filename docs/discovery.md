@@ -2,6 +2,8 @@
 
 Discovery is a staged evidence pipeline. A supplier listing count or a high internal score is not proof that a product will sell.
 
+The detailed, approved direction for the next discovery iteration is preserved in the [Product discovery V2 implementation specification](discovery-v2-implementation-spec.md). This document describes current behavior and near-term sequencing; the V2 specification describes proposed behavior and its full definition of done.
+
 ## Current slice
 
 The CJ adapter uses the official API V2 `product/listV2` endpoint for catalog search. It normalizes product ID, title, supplier SKU, category, USD cost range, listing count, warehouse inventory, verified inventory, creation time, delivery cycle, and basic media/fulfillment flags.
