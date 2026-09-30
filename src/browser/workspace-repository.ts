@@ -4,7 +4,7 @@ import { candidateStatuses } from '../domain/candidates';
 
 const candidateSummary = z.object({
   id: z.uuid(), status: z.enum(candidateStatuses), created_at: z.string(),
-  products: z.object({ title: z.string() }),
+  products: z.object({ title: z.string(), image_url: z.string().nullable() }),
   supplier_products: z.object({
     external_product_id: z.string(),
     source_url: z.string().nullable(),
@@ -22,7 +22,7 @@ export type CandidateSummary = z.infer<typeof candidateSummary>;
 /** A narrow, RLS-protected read model; no raw payloads or browser workflow writes. */
 export async function readRecentCandidates(client: SupabaseClient): Promise<CandidateSummary[]> {
   const result = await client.from('product_candidates')
-    .select(`id,status,created_at,products!inner(title),supplier_products!inner(
+    .select(`id,status,created_at,products!inner(title,image_url),supplier_products!inner(
       external_product_id,source_url,last_seen_at,suppliers!inner(name),
       supplier_variants(cost,currency,stock)
     )`)

@@ -17,6 +17,8 @@ const productData = z.object({
   pid: z.string().min(1),
   productNameEn: z.string().nullish(),
   description: z.string().nullish(),
+  bigImage: z.string().nullish(),
+  productImageSet: z.array(z.string()).nullish(),
   productKeyEnSet: z.array(z.string()).nullish(),
 }).passthrough();
 
@@ -90,6 +92,17 @@ function cleanText(html: string | null | undefined) {
 function productUrl(title: string, pid: string) {
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   return `https://cjdropshipping.com/product/${slug}-p-${pid}.html`;
+}
+
+function imageUrl(product: z.infer<typeof productData>) {
+  const value = product.bigImage?.trim() || product.productImageSet?.find((item) => item.trim())?.trim();
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' ? url.href : null;
+  } catch {
+    return null;
+  }
 }
 
 function variantOptions(names: string[], key: string | null | undefined) {
@@ -264,6 +277,7 @@ export class CjSupplierAdapter implements SupplierAdapter {
         externalProductId,
         title,
         description: cleanText(product.data.description),
+        imageUrl: imageUrl(product.data),
         sourceUrl: productUrl(title, externalProductId),
         variants: variants.data.map((variant) => ({
           externalVariantId: variant.vid,

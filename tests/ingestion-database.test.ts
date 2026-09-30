@@ -4,7 +4,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 
 const rpcSql = `select * from public.ingest_supplier_product(
-  $1, $2, $3, $4, $5, $6, $7::timestamptz, $8, $9::jsonb, $10::jsonb
+  $1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9, $10::jsonb, $11::jsonb
 )`;
 
 async function migrate(db: PGlite) {
@@ -44,6 +44,7 @@ async function ingest(
       '1561984433618694144',
       'Catnip Balls Cat Treats Rotary Molar Teeth Cleaning',
       'Plain text description',
+      'https://cf.cjdropshipping.com/product/catnip-balls.jpg',
       'https://cjdropshipping.com/product/catnip-p-1561984433618694144.html',
       retrievedAt,
       'cj-api-v2',
@@ -112,6 +113,11 @@ test('trusted supplier ingestion is atomic, idempotent, and retains raw history'
       'select count(*)::int as count from private.supplier_snapshots',
     );
     assert.equal(snapshots.rows[0]!.count, 2);
+
+    const products = await db.query<{ image_url: string | null }>(
+      'select image_url from public.products',
+    );
+    assert.equal(products.rows[0]!.image_url, 'https://cf.cjdropshipping.com/product/catnip-balls.jpg');
 
     const variants = await db.query<{
       external_variant_id: string;

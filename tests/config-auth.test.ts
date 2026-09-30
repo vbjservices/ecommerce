@@ -65,7 +65,7 @@ test('repository does not convert failed or malformed reads into a valid empty w
     id: '00000000-0000-4000-8000-000000000010',
     status: 'discovered',
     created_at: '2026-09-29T10:00:00Z',
-    products: { title: 'Candidate' },
+    products: { title: 'Candidate', image_url: 'https://cf.cjdropshipping.com/product/candidate.jpg' },
     supplier_products: {
       external_product_id: 'supplier-product',
       source_url: 'https://example.com/product',

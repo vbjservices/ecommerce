@@ -140,6 +140,25 @@ async function start() {
       for (const candidate of candidates) {
         const li = document.createElement('li');
         li.className = 'candidate-card';
+        const media = document.createElement('div');
+        media.className = 'candidate-media';
+        const imageFallback = document.createElement('span');
+        imageFallback.textContent = 'No image';
+        const imageUrl = safeSourceUrl(candidate.products.image_url);
+        if (imageUrl) {
+          const image = document.createElement('img');
+          image.src = imageUrl;
+          image.alt = candidate.products.title;
+          image.loading = 'lazy';
+          image.decoding = 'async';
+          image.referrerPolicy = 'no-referrer';
+          image.addEventListener('error', () => { media.replaceChildren(imageFallback); }, { once: true });
+          media.append(image);
+        } else {
+          media.append(imageFallback);
+        }
+        const body = document.createElement('div');
+        body.className = 'candidate-body';
         const heading = document.createElement('div');
         heading.className = 'candidate-heading';
         const identity = document.createElement('div');
@@ -166,7 +185,7 @@ async function start() {
         );
 
         const sourceUrl = safeSourceUrl(candidate.supplier_products.source_url);
-        li.append(heading, facts);
+        body.append(heading, facts);
         if (sourceUrl) {
           const link = document.createElement('a');
           link.className = 'source-link';
@@ -174,8 +193,9 @@ async function start() {
           link.target = '_blank';
           link.rel = 'noopener noreferrer';
           link.textContent = 'View supplier product \u2197';
-          li.append(link);
+          body.append(link);
         }
+        li.append(media, body);
         ul.append(li);
       }
       list.append(ul);

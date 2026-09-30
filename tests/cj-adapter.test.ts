@@ -41,6 +41,7 @@ test('CJ adapter authenticates once and normalizes a product with explicit varia
   }
   assert.equal(snapshot.product.title, 'Catnip Balls Cat Treats Rotary Molar Teeth Cleaning');
   assert.equal(snapshot.product.description, 'Product Details:\nFlavor: Mint & catnip');
+  assert.equal(snapshot.product.imageUrl, 'https://cf.cjdropshipping.com/product/catnip-balls.jpg');
   assert.equal(snapshot.product.sourceUrl,
     'https://cjdropshipping.com/product/catnip-balls-cat-treats-rotary-molar-teeth-cleaning-p-1561984433618694144.html');
   assert.equal(snapshot.product.variants.length, 2);

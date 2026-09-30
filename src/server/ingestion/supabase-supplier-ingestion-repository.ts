@@ -28,6 +28,7 @@ export class SupabaseSupplierIngestionRepository implements SupplierIngestionRep
       p_external_product_id: snapshot.product.externalProductId,
       p_title: snapshot.product.title,
       p_description: snapshot.product.description,
+      p_image_url: snapshot.product.imageUrl,
       p_source_url: snapshot.product.sourceUrl,
       p_retrieved_at: snapshot.retrievedAt,
       p_source: snapshot.source,

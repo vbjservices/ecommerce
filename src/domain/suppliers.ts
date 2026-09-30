@@ -20,6 +20,7 @@ export interface SupplierProduct {
   externalProductId: string;
   title: string;
   description: string | null;
+  imageUrl: string | null;
   sourceUrl: string | null;
   variants: Array<{
     externalVariantId: string;
