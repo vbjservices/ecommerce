@@ -100,15 +100,20 @@ function productUrl(title: string, pid: string) {
   return `https://cjdropshipping.com/product/${slug}-p-${pid}.html`;
 }
 
-function imageUrl(product: z.infer<typeof productData>) {
-  const value = product.bigImage?.trim() || product.productImageSet?.find((item) => item.trim())?.trim();
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' ? url.href : null;
-  } catch {
-    return null;
+function safeImageUrls(values: Array<string | null | undefined>) {
+  const urls: string[] = [];
+  for (const value of values) {
+    if (!value?.trim()) continue;
+    try {
+      const url = new URL(value.trim());
+      if (url.protocol === 'https:' && !urls.includes(url.href)) urls.push(url.href);
+    } catch { /* Invalid supplier media is ignored. */ }
   }
+  return urls.slice(0, 50);
+}
+
+function imageUrls(product: z.infer<typeof productData>) {
+  return safeImageUrls([product.bigImage, ...(product.productImageSet ?? [])]);
 }
 
 function variantOptions(names: string[], key: string | null | undefined) {
@@ -161,6 +166,7 @@ export class CjSupplierAdapter implements SupplierAdapter {
   readonly providerName = 'CJdropshipping';
   readonly catalog = { getProduct: (externalProductId: string) => this.getProduct(externalProductId) };
   readonly discovery = { search: (input: SupplierDiscoveryInput) => this.search(input) };
+  readonly media = { getProductImages: (externalProductId: string) => this.getProductImages(externalProductId) };
 
   constructor(private readonly client: CjClient) {}
 
@@ -216,38 +222,42 @@ export class CjSupplierAdapter implements SupplierAdapter {
     const parsed = discoveryData.safeParse(response.data);
     if (!parsed.success) throw new IntegrationError('invalid_payload', this.provider);
     const retrievedAt = new Date().toISOString();
-    const products = parsed.data.content.flatMap((group) => group.productList).map((product) => ({
-      externalProductId: product.id,
-      title: product.nameEn.trim(),
-      supplierSku: product.sku?.trim() || null,
-      imageUrl: product.bigImage?.trim() || null,
-      sourceUrl: productUrl(product.nameEn, product.id),
-      category: product.threeCategoryName?.trim() || product.categoryId?.trim() || null,
-      costRange: priceRange(product.discountPrice ?? product.nowPrice ?? product.sellPrice),
-      listedCount: product.listedNum ?? null,
-      inventory: product.warehouseInventoryNum ?? null,
-      verifiedInventory: product.totalVerifiedInventory ?? null,
-      unverifiedInventory: product.totalUnVerifiedInventory ?? null,
-      createdAt: product.createAt === null || product.createAt === undefined
-        ? null
-        : new Date(product.createAt).toISOString(),
-      deliveryDays: deliveryDays(product.deliveryCycle),
-      hasVideo: product.isVideo === null || product.isVideo === undefined
-        ? null : product.isVideo === 1,
-      freeShipping: product.addMarkStatus === null || product.addMarkStatus === undefined
-        ? null : product.addMarkStatus === 1,
-      customizable: product.customization === null || product.customization === undefined
-        ? null : product.customization === 1,
-      personalized: product.isPersonalized === null || product.isPersonalized === undefined
-        ? null : product.isPersonalized === 1,
-      hasCertification: product.hasCECertification === null || product.hasCECertification === undefined
-        ? null : product.hasCECertification === 1,
-      productType: product.productType?.trim() || null,
-      saleStatus: product.saleStatus === null || product.saleStatus === undefined
-        ? null : String(product.saleStatus) === '3' ? 'on_sale' as const : 'not_on_sale' as const,
-      visible: product.authorityStatus === null || product.authorityStatus === undefined
-        ? null : String(product.authorityStatus) === '1',
-    }));
+    const products = parsed.data.content.flatMap((group) => group.productList).map((product) => {
+      const images = safeImageUrls([product.bigImage]);
+      return {
+        externalProductId: product.id,
+        title: product.nameEn.trim(),
+        supplierSku: product.sku?.trim() || null,
+        imageUrl: images[0] ?? null,
+        imageUrls: images,
+        sourceUrl: productUrl(product.nameEn, product.id),
+        category: product.threeCategoryName?.trim() || product.categoryId?.trim() || null,
+        costRange: priceRange(product.discountPrice ?? product.nowPrice ?? product.sellPrice),
+        listedCount: product.listedNum ?? null,
+        inventory: product.warehouseInventoryNum ?? null,
+        verifiedInventory: product.totalVerifiedInventory ?? null,
+        unverifiedInventory: product.totalUnVerifiedInventory ?? null,
+        createdAt: product.createAt === null || product.createAt === undefined
+          ? null
+          : new Date(product.createAt).toISOString(),
+        deliveryDays: deliveryDays(product.deliveryCycle),
+        hasVideo: product.isVideo === null || product.isVideo === undefined
+          ? null : product.isVideo === 1,
+        freeShipping: product.addMarkStatus === null || product.addMarkStatus === undefined
+          ? null : product.addMarkStatus === 1,
+        customizable: product.customization === null || product.customization === undefined
+          ? null : product.customization === 1,
+        personalized: product.isPersonalized === null || product.isPersonalized === undefined
+          ? null : product.isPersonalized === 1,
+        hasCertification: product.hasCECertification === null || product.hasCECertification === undefined
+          ? null : product.hasCECertification === 1,
+        productType: product.productType?.trim() || null,
+        saleStatus: product.saleStatus === null || product.saleStatus === undefined
+          ? null : String(product.saleStatus) === '3' ? 'on_sale' as const : 'not_on_sale' as const,
+        visible: product.authorityStatus === null || product.authorityStatus === undefined
+          ? null : String(product.authorityStatus) === '1',
+      };
+    });
     return {
       products,
       nextCursor: parsed.data.pageNumber < parsed.data.totalPages
@@ -256,6 +266,24 @@ export class CjSupplierAdapter implements SupplierAdapter {
       totalResults: parsed.data.totalRecords,
       source: 'cj-api-v2:product/listV2',
       retrievedAt,
+      rawPayload: response as unknown as Json,
+    };
+  }
+
+  private async getProductImages(externalProductId: string) {
+    if (!identifier.test(externalProductId)) {
+      throw new IntegrationError('invalid_payload', this.provider);
+    }
+    const response = await this.client.get(`/product/query?pid=${encodeURIComponent(externalProductId)}`);
+    const product = productData.safeParse(response.data);
+    if (!product.success || product.data.pid !== externalProductId) {
+      throw new IntegrationError('invalid_payload', this.provider);
+    }
+    return {
+      externalProductId,
+      imageUrls: imageUrls(product.data),
+      source: 'cj-api-v2:product/query',
+      retrievedAt: new Date().toISOString(),
       rawPayload: response as unknown as Json,
     };
   }
@@ -293,6 +321,7 @@ export class CjSupplierAdapter implements SupplierAdapter {
       }),
     );
     const optionNames = product.data.productKeyEnSet ?? [];
+    const images = imageUrls(product.data);
     return {
       source: 'cj-api-v2',
       retrievedAt,
@@ -305,7 +334,8 @@ export class CjSupplierAdapter implements SupplierAdapter {
         externalProductId,
         title,
         description: cleanText(product.data.description),
-        imageUrl: imageUrl(product.data),
+        imageUrl: images[0] ?? null,
+        imageUrls: images,
         sourceUrl: productUrl(title, externalProductId),
         variants: variants.data.map((variant) => ({
           externalVariantId: variant.vid,

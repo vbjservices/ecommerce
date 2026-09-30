@@ -42,11 +42,11 @@ The default run budget is:
 
 | Budget | Default |
 | --- | ---: |
-| API requests | 12 |
+| API requests | 32 |
 | Pages per strategy | 2 |
 | Raw product rows | 300 |
 | Page size | 50 |
-| Detail enrichments | 0 |
+| Shortlist media enrichments | 20 |
 
 Completed runs are cached for six hours by default using supplier, normalized query, profile, configuration version, and scoring version. Repeating the same command reuses the fresh run without spending CJ requests. Pass `--refresh` to deliberately collect a new observation:
 
@@ -54,7 +54,7 @@ Completed runs are cached for six hours by default using supplier, normalized qu
 npm run cj:discover -- "cat toy" --profile=pets --refresh
 ```
 
-The application stops when a budget is reached, a source is exhausted, or a later page contains at least 90% duplicates. A failed strategy becomes a sanitized run warning; successful strategies are retained. If no page succeeds, the run is marked failed.
+The application stops when a budget is reached, a source is exhausted, or a later page contains at least 90% duplicates. After supplier ranking, it uses the remaining shared API budget to retrieve the complete CJ image set for up to 20 dashboard candidates. A failed strategy or media lookup becomes a sanitized run warning; successful work is retained. If no search page succeeds, the run is marked failed.
 
 Products are deduplicated by supplier product ID. Every occurrence retains strategy, query, query source, page, rank, sort, filters, source, and retrieval time. Repeated discovery is provenance, not independent consumer-demand evidence.
 
@@ -108,7 +108,7 @@ One service-role-only PostgreSQL RPC atomically persists:
 
 Internal browser users can read normalized public records through RLS and cannot write them. Raw pages remain inaccessible to browser roles and append-only for the service role. Invalid persistence batches roll back completely.
 
-The dashboard shows the most recent V2 shortlist with supplier image, original query, profile, eligibility, score, confidence, coverage, relevance, strategy count, structured positive evidence, review reasons, risks, unknowns, and the safe supplier link. The dashboard remains compatible while the additive migration is pending.
+The dashboard separates searched products under **Discovery** from persisted catalog records under **Imported products**. Each lane shows a count and retains its selected tab during quiet refreshes. Products with multiple normalized supplier images use an automatic carousel with keyboard-accessible previous/next controls; reduced-motion preferences disable autoplay. The discovery lane also shows original query, profile, eligibility, score, confidence, coverage, relevance, strategy count, structured positive evidence, review reasons, risks, unknowns, and the safe supplier link. The dashboard remains compatible while additive migrations are pending.
 
 ## Current limits and next work
 
@@ -116,4 +116,4 @@ CJ listing activity is not verified sales. CJ Trending is not proof of market de
 
 This slice does not schedule recurring runs, request destination shipping quotes, calculate landed cost, scrape market sources, publish products, maintain listings, purchase inventory, fulfill orders, or integrate with the external orchestrator.
 
-The next discovery work should use real persisted runs to calibrate thresholds and scoring, add bounded full-product enrichment for shortlisted candidates, and improve the dashboard's run-level filtering. Market validation and Netherlands shipping/economics remain later workflows with their own evidence sources.
+The next discovery work should use real persisted runs to calibrate thresholds and scoring, add variant-quality enrichment for the strongest candidates, and improve the dashboard's run-level filtering. Market validation and Netherlands shipping/economics remain later workflows with their own evidence sources.

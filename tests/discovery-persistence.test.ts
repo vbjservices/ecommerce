@@ -62,7 +62,15 @@ function runPayload() {
         listing_count: 100, inventory: 1000, verified_inventory: 900,
         unverified_inventory: 100, delivery_days_min: 3, delivery_days_max: 5,
         sale_status: 'on_sale', visible: true,
-        normalized_snapshot: { externalProductId: 'cj-product-1', title: 'Interactive Cat Toy' },
+        normalized_snapshot: {
+          externalProductId: 'cj-product-1',
+          title: 'Interactive Cat Toy',
+          imageUrl: 'https://example.com/cat.jpg',
+          imageUrls: [
+            'https://example.com/cat.jpg',
+            'https://example.com/cat-side.jpg',
+          ],
+        },
       },
     }],
     source_pages: [{
@@ -122,8 +130,14 @@ test('discovery persistence is atomic, retains provenance, and keeps raw pages p
       db.query('select * from private.discovery_snapshots')), /permission denied/);
 
     const memberCandidates = await asRole(db, 'authenticated', member, () =>
-      db.query<{ title: string; score: string }>('select title,score::text from public.discovery_candidates'));
-    assert.deepEqual(memberCandidates.rows, [{ title: 'Interactive Cat Toy', score: '82.00' }]);
+      db.query<{ title: string; score: string; image_urls: string[] }>(
+        'select title,score::text,image_urls from public.discovery_candidates',
+      ));
+    assert.deepEqual(memberCandidates.rows, [{
+      title: 'Interactive Cat Toy',
+      score: '82.00',
+      image_urls: ['https://example.com/cat.jpg', 'https://example.com/cat-side.jpg'],
+    }]);
 
     const invalid = runPayload();
     invalid.candidates.push(structuredClone(invalid.candidates[0]!));

@@ -29,23 +29,26 @@ This file tracks implementation state so proposed capabilities are not confused 
 - RLS-protected normalized reads, no browser writes, and restricted append-only persistence boundaries.
 - Trusted `cj:discover` CLI application entry point.
 - Dashboard V2 shortlist with evidence, unknowns, risks, and safe supplier links.
+- Separate Discovery and Imported products dashboard tabs with independent empty states and counts.
+- Budgeted shortlist media enrichment that retains CJ's complete normalized image set.
+- Automatic image carousels with previous/next controls and reduced-motion support.
 - Tests covering profiles, deterministic and optional model expansion, malformed/unavailable model output, relevance, exclusions, strategies, pagination, budgets, duplicates, partial failures, second-niche reuse, atomic persistence, privacy, and migration compatibility.
 
 ## Deployment step still required
 
-Apply `supabase/migrations/20260930000200_discovery_runs.sql` to hosted Supabase. Then run:
+Apply `supabase/migrations/20260930000300_product_image_galleries.sql` to hosted Supabase. Then collect gallery data with a fresh run:
 
 ```sh
-npm run cj:discover -- "cat toy" --profile=pets
+npm run cj:discover -- "cat toy" --profile=pets --refresh
 ```
 
-After the first persisted run, refresh the authenticated dashboard and verify the Discovery V2 shortlist against the CLI output.
+The configuration version is now `discovery-v2.1`, so the first command after deployment also bypasses older cached run keys without `--refresh`. Reimport an existing product to refresh its imported-product gallery if its historical raw snapshot did not contain `productImageSet`.
 
 ## Next discovery work
 
 1. Run several real queries and inspect false positives, false negatives, provider result overlap, data coverage, and CJ field reliability.
 2. Calibrate profile synonyms, exclusions, thresholds, weights, and risk severities from those results.
-3. Add bounded full-product enrichment for the strongest shortlist, including actual variant count, stocked-variant coverage, variant price spread, and inventory concentration.
+3. Add bounded variant-quality enrichment for the strongest shortlist, including actual variant count, stocked-variant coverage, variant price spread, and inventory concentration.
 4. Add run-level dashboard filters and a run detail view before adding workflow writes.
 5. Add explicit operator decisions and feedback history in a later review slice, then backtest score versions against those outcomes.
 

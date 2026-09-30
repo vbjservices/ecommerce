@@ -116,9 +116,11 @@ export function assessDiscoveryProduct(
       product.deliveryDays.max <= 5 ? 100 : product.deliveryDays.max <= 8 ? 70 :
         product.deliveryDays.max <= 12 ? 40 : 10, profile, source, observedAt,
       'Supplier-reported delivery cycle; destination shipping is not yet validated.'),
-    component('creativeAssetReadiness', { image: Boolean(product.imageUrl), video: product.hasVideo },
-      product.imageUrl === null && product.hasVideo === null ? null :
-        (product.imageUrl ? 60 : 0) + (product.hasVideo ? 40 : 0), profile, source, observedAt,
+    component('creativeAssetReadiness', { imageCount: product.imageUrls.length, video: product.hasVideo },
+      product.imageUrls.length === 0 && product.hasVideo === null ? null :
+        (product.imageUrls.length > 0 ? 40 : 0) +
+        (product.imageUrls.length >= 3 ? 20 : 0) + (product.hasVideo ? 40 : 0),
+      profile, source, observedAt,
       'Availability of supplier image and video assets; advertising performance is unknown.'),
     component('operationalSimplicity', product.customizable, product.customizable === null ? null :
       product.customizable ? 40 : 100, profile, source, observedAt,

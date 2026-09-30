@@ -18,10 +18,10 @@ import { assertValidDiscoveryProfile } from './profiles';
 import { meaningfulSearchTerms } from './query-terms';
 
 export const DEFAULT_DISCOVERY_BUDGET: DiscoveryBudget = {
-  maxApiRequests: 12,
+  maxApiRequests: 32,
   maxPagesPerStrategy: 2,
   maxRawCandidates: 300,
-  maxEnrichments: 0,
+  maxEnrichments: 20,
   pageSize: 50,
 };
 
@@ -95,6 +95,27 @@ function eligibilityOrder(status: string) {
   return status === 'pass' ? 0 : status === 'review' ? 1 : 2;
 }
 
+function mergeImageUrls(...groups: string[][]) {
+  return [...new Set(groups.flat())];
+}
+
+function assessedCandidates(
+  products: Map<string, { product: SupplierDiscoveryProduct; occurrences: DiscoveryOccurrence[] }>,
+  query: string,
+  profile: DiscoveryProfile,
+  now: number,
+) {
+  return [...products.values()].map(({ product, occurrences }) => ({
+    product,
+    occurrences,
+    assessment: assessDiscoveryProduct(product, query, profile, occurrences, now),
+  })).sort((left, right) =>
+    eligibilityOrder(left.assessment.eligibility.status) - eligibilityOrder(right.assessment.eligibility.status) ||
+    right.assessment.score - left.assessment.score ||
+    right.assessment.confidence - left.assessment.confidence ||
+    (right.product.listedCount ?? -1) - (left.product.listedCount ?? -1));
+}
+
 export async function runProductDiscovery(
   adapter: SupplierAdapter,
   request: ProductDiscoveryRequest,
@@ -140,6 +161,7 @@ export async function runProductDiscovery(
   let pagesFetched = 0;
   let productsFetched = 0;
   let duplicatesFound = 0;
+  let enrichmentsUsed = 0;
   let stoppingReason = 'strategies_exhausted';
   outer: for (const plan of plans) {
     const pageLimit = Math.min(plan.maxPages, budget.maxPagesPerStrategy);
@@ -208,16 +230,46 @@ export async function runProductDiscovery(
       }
     }
   }
-  const now = clock();
-  const candidates = [...products.values()].map(({ product, occurrences }) => ({
-    product,
-    occurrences,
-    assessment: assessDiscoveryProduct(product, expansionResult.queries[0]!.query, request.profile, occurrences, now),
-  })).sort((left, right) =>
-    eligibilityOrder(left.assessment.eligibility.status) - eligibilityOrder(right.assessment.eligibility.status) ||
-    right.assessment.score - left.assessment.score ||
-    right.assessment.confidence - left.assessment.confidence ||
-    (right.product.listedCount ?? -1) - (left.product.listedCount ?? -1));
+  const assessmentTime = clock();
+  let candidates = assessedCandidates(
+    products, expansionResult.queries[0]!.query, request.profile, assessmentTime,
+  );
+  if (adapter.media && budget.maxEnrichments > 0) {
+    for (const candidate of candidates.slice(0, budget.maxEnrichments)) {
+      if (apiRequestsUsed >= budget.maxApiRequests) {
+        stoppingReason = 'api_request_budget_reached';
+        break;
+      }
+      apiRequestsUsed++;
+      enrichmentsUsed++;
+      try {
+        const media = await adapter.media.getProductImages(candidate.product.externalProductId);
+        candidate.product.imageUrls = mergeImageUrls(
+          candidate.product.imageUrls,
+          media.imageUrls,
+        );
+        candidate.product.imageUrl = candidate.product.imageUrls[0] ?? candidate.product.imageUrl;
+        sourcePages.push({
+          strategy: 'media_enrichment',
+          query: candidate.product.externalProductId,
+          querySource: 'original',
+          page: 1,
+          source: media.source,
+          retrievedAt: media.retrievedAt,
+          rawPayload: media.rawPayload,
+        });
+      } catch (error) {
+        warnings.push({
+          strategy: 'media_enrichment',
+          query: candidate.product.externalProductId,
+          code: warningCode(error),
+        });
+      }
+    }
+    candidates = assessedCandidates(
+      products, expansionResult.queries[0]!.query, request.profile, assessmentTime,
+    );
+  }
   const status = pagesFetched === 0 ? 'failed' : warnings.length ? 'completed_with_warnings' : 'completed';
   const completedAtMs = clock();
   return {
@@ -240,6 +292,7 @@ export async function runProductDiscovery(
       productsFetched,
       uniqueProductsFound: candidates.length,
       duplicatesFound,
+      enrichmentsUsed,
       eligibleCandidateCount: candidates.filter((candidate) => candidate.assessment.eligibility.status === 'pass').length,
       stoppingReason,
     },

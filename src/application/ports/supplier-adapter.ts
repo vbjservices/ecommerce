@@ -37,6 +37,14 @@ export interface SupplierDiscoverySnapshot {
   rawPayload: Json;
 }
 
+export interface SupplierMediaSnapshot {
+  externalProductId: string;
+  imageUrls: string[];
+  source: string;
+  retrievedAt: Timestamp;
+  rawPayload: Json;
+}
+
 /** Capability presence is the source of truth; no flags that can disagree with methods. */
 export interface SupplierAdapter {
   provider: string;
@@ -46,5 +54,8 @@ export interface SupplierAdapter {
   };
   discovery?: {
     search(input: SupplierDiscoveryInput): Promise<SupplierDiscoverySnapshot>;
+  };
+  media?: {
+    getProductImages(externalProductId: string): Promise<SupplierMediaSnapshot>;
   };
 }

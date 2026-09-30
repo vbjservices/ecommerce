@@ -2,7 +2,7 @@ import type { DiscoveryProfile, DiscoveryRunWarning, QueryExpansion } from '../.
 import type { QueryExpansionProvider } from '../ports/query-expansion-provider';
 import { canonicalTerm, meaningfulSearchTerms, normalizeSearchText } from './query-terms';
 
-export const DISCOVERY_CONFIGURATION_VERSION = 'discovery-v2.0';
+export const DISCOVERY_CONFIGURATION_VERSION = 'discovery-v2.1';
 
 export class DeterministicQueryExpansionProvider implements QueryExpansionProvider {
   readonly name = 'deterministic';

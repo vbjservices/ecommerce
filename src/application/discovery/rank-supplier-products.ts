@@ -96,8 +96,8 @@ export function rankSupplierDiscoveryProducts(
       costFit: null,
       freshness: null,
       fulfillment: null,
-      media: product.imageUrl === null && product.hasVideo === null ? null :
-        (product.imageUrl ? 3 : 0) + (product.hasVideo ? 2 : 0),
+      media: product.imageUrls.length === 0 && product.hasVideo === null ? null :
+        (product.imageUrls.length ? 3 : 0) + (product.hasVideo ? 2 : 0),
     };
     const midpoint = costMidpoint(product);
     if (midpoint !== null) components.costFit = costFit(midpoint, profile);

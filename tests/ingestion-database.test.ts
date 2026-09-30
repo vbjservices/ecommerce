@@ -49,7 +49,18 @@ async function ingest(
       retrievedAt,
       'cj-api-v2',
       JSON.stringify(variants),
-      JSON.stringify({ product: { requestId: `product-${retrievedAt}` } }),
+      JSON.stringify({
+        product: {
+          requestId: `product-${retrievedAt}`,
+          data: {
+            bigImage: 'https://cf.cjdropshipping.com/product/catnip-balls.jpg',
+            productImageSet: [
+              'https://cf.cjdropshipping.com/product/catnip-balls-alt.jpg',
+              'javascript:invalid',
+            ],
+          },
+        },
+      }),
     ]);
     await db.exec('commit');
     return result.rows[0]!;
@@ -114,10 +125,14 @@ test('trusted supplier ingestion is atomic, idempotent, and retains raw history'
     );
     assert.equal(snapshots.rows[0]!.count, 2);
 
-    const products = await db.query<{ image_url: string | null }>(
-      'select image_url from public.products',
+    const products = await db.query<{ image_url: string | null; image_urls: string[] }>(
+      'select image_url,image_urls from public.products',
     );
     assert.equal(products.rows[0]!.image_url, 'https://cf.cjdropshipping.com/product/catnip-balls.jpg');
+    assert.deepEqual(products.rows[0]!.image_urls, [
+      'https://cf.cjdropshipping.com/product/catnip-balls.jpg',
+      'https://cf.cjdropshipping.com/product/catnip-balls-alt.jpg',
+    ]);
 
     const variants = await db.query<{
       external_variant_id: string;

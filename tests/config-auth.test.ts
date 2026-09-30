@@ -70,7 +70,14 @@ test('repository does not convert failed or malformed reads into a valid empty w
     id: '00000000-0000-4000-8000-000000000010',
     status: 'discovered',
     created_at: '2026-09-29T10:00:00Z',
-    products: { title: 'Candidate', image_url: 'https://cf.cjdropshipping.com/product/candidate.jpg' },
+    products: {
+      title: 'Candidate',
+      image_url: 'https://cf.cjdropshipping.com/product/candidate.jpg',
+      image_urls: [
+        'https://cf.cjdropshipping.com/product/candidate.jpg',
+        'https://cf.cjdropshipping.com/product/candidate-side.jpg',
+      ],
+    },
     supplier_products: {
       external_product_id: 'supplier-product',
       source_url: 'https://example.com/product',
@@ -98,15 +105,15 @@ test('repository stays readable during the additive product image migration', as
   const client = {
     from: () => ({ select: () => ({ order: () => ({ limit: async () => {
       calls++;
-      return calls === 1
+      return calls < 3
         ? { data: null, error: { code: '42703' } }
         : { data: [row], error: null };
     } }) }) }),
   } as unknown as SupabaseClient;
   assert.deepEqual(await readRecentCandidates(client), [{
-    ...row, products: { ...row.products, image_url: null },
+    ...row, products: { ...row.products, image_url: null, image_urls: [] },
   }]);
-  assert.equal(calls, 2);
+  assert.equal(calls, 3);
 });
 
 test('discovery read model tolerates an undeployed migration and validates deployed rows', async () => {
@@ -122,6 +129,7 @@ test('discovery read model tolerates an undeployed migration and validates deplo
     rank: 1,
     title: 'Interactive Cat Toy',
     image_url: null,
+    image_urls: [],
     source_url: 'https://example.com/product',
     eligibility_status: 'pass',
     relevance_level: 'exact',
@@ -141,6 +149,40 @@ test('discovery read model tolerates an undeployed migration and validates deplo
     },
   };
   assert.deepEqual(await readRecentDiscoveryCandidates(client([row], null)), [row]);
+});
+
+test('discovery read model falls back to the primary image until galleries are migrated', async () => {
+  let calls = 0;
+  const row = {
+    id: '00000000-0000-4000-8000-000000000020',
+    rank: 1,
+    title: 'Interactive Cat Toy',
+    image_url: 'https://example.com/cat.jpg',
+    source_url: null,
+    eligibility_status: 'pass',
+    relevance_level: 'exact',
+    score: '82.00', confidence: '90.00', coverage: '95.00',
+    suppliers: { name: 'Supplier' },
+    discovery_runs: { original_query: 'cat toy', profile_id: 'pets', completed_at: '2026-09-30T10:00:00Z' },
+    discovery_occurrences: [],
+    assessment: {
+      positiveEvidence: [], unknownEvidence: [], eligibility: { reasons: [] }, risks: [],
+    },
+  };
+  const client = {
+    from: () => ({ select: () => ({ order: () => ({ order: () => ({
+      limit: async () => {
+        calls++;
+        return calls === 1
+          ? { data: null, error: { code: '42703' } }
+          : { data: [row], error: null };
+      },
+    }) }) }) }),
+  } as unknown as SupabaseClient;
+  assert.deepEqual(await readRecentDiscoveryCandidates(client), [{
+    ...row, image_urls: ['https://example.com/cat.jpg'],
+  }]);
+  assert.equal(calls, 2);
 });
 
 test('workspace cache is page-memory only and expires after five minutes', () => {

@@ -73,6 +73,7 @@ try {
       coverage: `${candidate.assessment.coverage}%`,
       relevance: candidate.assessment.relevance.level,
       strategies: new Set(candidate.occurrences.map((item) => item.strategy)).size,
+      images: candidate.product.imageUrls.length,
       listed: candidate.product.listedCount ?? 'unknown',
       verifiedStock: candidate.product.verifiedInventory ?? 'unknown',
       title: candidate.product.title,

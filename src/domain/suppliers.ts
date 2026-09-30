@@ -21,6 +21,7 @@ export interface SupplierProduct {
   title: string;
   description: string | null;
   imageUrl: string | null;
+  imageUrls: string[];
   sourceUrl: string | null;
   variants: Array<{
     externalVariantId: string;
@@ -37,6 +38,7 @@ export interface SupplierDiscoveryProduct {
   title: string;
   supplierSku: string | null;
   imageUrl: string | null;
+  imageUrls: string[];
   sourceUrl: string;
   category: string | null;
   costRange: {

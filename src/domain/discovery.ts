@@ -131,7 +131,7 @@ export interface AssessedDiscoveryCandidate {
 }
 
 export interface DiscoverySourcePage {
-  strategy: DiscoveryStrategy;
+  strategy: DiscoveryStrategy | 'media_enrichment';
   query: string;
   querySource: QueryExpansionSource;
   page: number;
@@ -141,7 +141,7 @@ export interface DiscoverySourcePage {
 }
 
 export interface DiscoveryRunWarning {
-  strategy: DiscoveryStrategy | 'query_expansion';
+  strategy: DiscoveryStrategy | 'query_expansion' | 'media_enrichment';
   query: string;
   code: string;
 }
@@ -166,6 +166,7 @@ export interface DiscoveryRunResult {
     productsFetched: number;
     uniqueProductsFound: number;
     duplicatesFound: number;
+    enrichmentsUsed: number;
     eligibleCandidateCount: number;
     stoppingReason: string;
   };

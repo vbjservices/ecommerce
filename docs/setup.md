@@ -89,7 +89,7 @@ npm run cj:import -- 1561984433618694144
 npm run cj:discover -- "cat toy" --profile=pets
 ```
 
-`cj:search` is the legacy read-only preview and does not persist results. `cj:discover` executes the budgeted V2 pipeline and atomically persists its run, query plan, ranked candidates, occurrences, normalized observations, and private raw pages. Apply `20260930000200_discovery_runs.sql` before using it. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
+`cj:search` is the legacy read-only preview and does not persist results. `cj:discover` executes the budgeted V2 pipeline and atomically persists its run, query plan, ranked candidates, occurrences, normalized observations, shortlist image galleries, and private raw pages. Apply `20260930000200_discovery_runs.sql` and `20260930000300_product_image_galleries.sql` before using it. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product, image gallery, and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
 
 ## 6. Publish using the existing Pages setting
 

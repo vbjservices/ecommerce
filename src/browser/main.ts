@@ -6,8 +6,16 @@ import { readRecentCandidates, readRecentDiscoveryCandidates } from './workspace
 import { isWorkspaceSnapshotFresh, type WorkspaceSnapshot } from './workspace-cache';
 
 const app = document.querySelector<HTMLElement>('#app')!;
+const carouselTimers = new Set<number>();
+
+function stopCarousels() {
+  for (const timer of carouselTimers) window.clearInterval(timer);
+  carouselTimers.clear();
+}
+
 // All API/user text uses textContent. HTML templates below contain static markup only.
 function message(title: string, detail: string) {
+  stopCarousels();
   app.innerHTML = '<section class="panel narrow"><p class="eyebrow">Workspace access</p><h1></h1><p class="description"></p><div class="actions"></div></section>';
   app.querySelector('h1')!.textContent = title;
   app.querySelector('.description')!.textContent = detail;
@@ -28,6 +36,7 @@ async function start() {
   let revision = 0;
   let snapshot: WorkspaceSnapshot | null = null;
   let refreshInFlight: Promise<void> | null = null;
+  let activeView: 'discovery' | 'imported' = 'discovery';
 
   function action(label: string, handler: () => void) {
     const button = document.createElement('button');
@@ -121,6 +130,93 @@ async function start() {
     } catch { return null; }
   }
 
+  function imageCarousel(title: string, values: Array<string | null>, sizeClass: string) {
+    const frame = document.createElement('div');
+    frame.className = `${sizeClass} product-carousel`;
+    const urls = [...new Set(values.map(safeSourceUrl).filter((url): url is string => url !== null))];
+    if (!urls.length) {
+      const fallback = document.createElement('span');
+      fallback.textContent = 'No image';
+      frame.append(fallback);
+      return frame;
+    }
+    const track = document.createElement('div');
+    track.className = 'carousel-track';
+    for (const [index, url] of urls.entries()) {
+      const image = document.createElement('img');
+      image.src = url;
+      image.alt = urls.length === 1 ? title : `${title}, image ${index + 1} of ${urls.length}`;
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.referrerPolicy = 'no-referrer';
+      track.append(image);
+    }
+    frame.append(track);
+    if (urls.length === 1) return frame;
+
+    let current = 0;
+    let timer: number | null = null;
+    let pausedByUser = false;
+    const counter = document.createElement('span');
+    counter.className = 'carousel-counter';
+    const show = (next: number) => {
+      current = (next + urls.length) % urls.length;
+      track.style.transform = `translateX(-${current * 100}%)`;
+      counter.textContent = `${current + 1} / ${urls.length}`;
+    };
+    const stop = () => {
+      if (timer === null) return;
+      window.clearInterval(timer);
+      carouselTimers.delete(timer);
+      timer = null;
+    };
+    const start = () => {
+      stop();
+      if (pausedByUser || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      timer = window.setInterval(() => {
+        if (!document.hidden) show(current + 1);
+      }, 4_500);
+      carouselTimers.add(timer);
+    };
+    const control = (direction: -1 | 1, label: string, symbol: string) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `carousel-control ${direction < 0 ? 'previous' : 'next'}`;
+      button.setAttribute('aria-label', label);
+      button.textContent = symbol;
+      button.addEventListener('click', () => { show(current + direction); start(); });
+      return button;
+    };
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'carousel-toggle';
+    const updateToggle = () => {
+      toggle.textContent = pausedByUser ? '▶' : 'Ⅱ';
+      toggle.setAttribute('aria-label', `${pausedByUser ? 'Play' : 'Pause'} images for ${title}`);
+    };
+    toggle.addEventListener('click', () => {
+      pausedByUser = !pausedByUser;
+      updateToggle();
+      if (pausedByUser) stop(); else start();
+    });
+    updateToggle();
+    frame.append(
+      control(-1, `Previous image for ${title}`, '‹'),
+      control(1, `Next image for ${title}`, '›'),
+      toggle,
+      counter,
+    );
+    frame.addEventListener('mouseenter', stop);
+    frame.addEventListener('mouseleave', start);
+    frame.addEventListener('focusin', stop);
+    frame.addEventListener('focusout', (event) => {
+      if (!frame.contains(event.relatedTarget as Node | null)) start();
+    });
+    show(0);
+    start();
+    return frame;
+  }
+
   function renderDiscoveryCandidates(current: WorkspaceSnapshot) {
     const list = app.querySelector('.discovery-candidates')!;
     if (!current.discoveryCandidates.length) {
@@ -132,21 +228,11 @@ async function start() {
     for (const candidate of current.discoveryCandidates) {
       const li = document.createElement('li');
       li.className = 'discovery-card';
-      const imageFrame = document.createElement('div');
-      imageFrame.className = 'discovery-image';
-      const fallback = document.createElement('span');
-      fallback.textContent = 'No image';
-      const imageUrl = safeSourceUrl(candidate.image_url);
-      if (imageUrl) {
-        const image = document.createElement('img');
-        image.src = imageUrl;
-        image.alt = candidate.title;
-        image.loading = 'lazy';
-        image.decoding = 'async';
-        image.referrerPolicy = 'no-referrer';
-        image.addEventListener('error', () => { imageFrame.replaceChildren(fallback); }, { once: true });
-        imageFrame.append(image);
-      } else imageFrame.append(fallback);
+      const imageFrame = imageCarousel(
+        candidate.title,
+        [...candidate.image_urls, candidate.image_url],
+        'discovery-image',
+      );
       const body = document.createElement('div');
       body.className = 'discovery-body';
       const heading = document.createElement('div');
@@ -216,17 +302,46 @@ async function start() {
   }
 
   function renderWorkspace(current: WorkspaceSnapshot, status = `Updated ${cacheTime(current.fetchedAt)}`) {
+    stopCarousels();
     const { access, candidates } = current;
     app.innerHTML = `<section class="workspace"><div class="workspace-heading"><div><p class="eyebrow">Overview</p><h1>Product workspace</h1></div><div class="actions"></div></div>
-      <p class="account"></p><section class="panel discovery-panel"><div class="section-heading"><h2>Discovery V2 shortlist</h2><span class="badge">Evidence ranked</span></div>
+      <p class="account"></p><nav class="workspace-tabs" role="tablist" aria-label="Product workspace views">
+      <button id="discovery-tab" type="button" role="tab" data-view="discovery">Discovery <span class="tab-count"></span></button>
+      <button id="imported-tab" type="button" role="tab" data-view="imported">Imported products <span class="tab-count"></span></button></nav>
+      <section class="panel discovery-panel" role="tabpanel" aria-labelledby="discovery-tab" data-panel="discovery"><div class="section-heading"><h2>Discovery shortlist</h2><span class="badge">Evidence ranked</span></div>
       <div class="discovery-candidates"></div></section>
-      <section class="panel"><div class="section-heading"><h2>Imported candidates</h2><span class="badge">Read only</span></div>
+      <section class="panel" role="tabpanel" aria-labelledby="imported-tab" data-panel="imported"><div class="section-heading"><h2>Imported products</h2><span class="badge">Supabase store</span></div>
       <div class="candidates"></div></section><p class="footnote refresh-status" role="status"></p>
       <p class="footnote">Costs and stock are supplier snapshots. Shipping, market demand, and margin still need enrichment before review.</p></section>`;
     app.querySelector('.account')!.textContent = `Signed in as ${access.email}`;
     app.querySelector('.refresh-status')!.textContent = status;
     action('Refresh', () => { void refresh({ force: true, background: true }); });
     action('Sign out', () => { void signOut(); });
+    const selectView = (view: 'discovery' | 'imported') => {
+      activeView = view;
+      for (const tab of app.querySelectorAll<HTMLButtonElement>('[role="tab"]')) {
+        const selected = tab.dataset.view === view;
+        tab.setAttribute('aria-selected', String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+      }
+      for (const panel of app.querySelectorAll<HTMLElement>('[role="tabpanel"]')) {
+        panel.hidden = panel.dataset.panel !== view;
+      }
+    };
+    const tabs = app.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    tabs[0]!.querySelector('.tab-count')!.textContent = String(current.discoveryCandidates.length);
+    tabs[1]!.querySelector('.tab-count')!.textContent = String(candidates.length);
+    for (const tab of tabs) {
+      tab.addEventListener('click', () => selectView(tab.dataset.view as 'discovery' | 'imported'));
+      tab.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        const next = tab === tabs[0] ? tabs[1]! : tabs[0]!;
+        next.focus();
+        selectView(next.dataset.view as 'discovery' | 'imported');
+      });
+    }
+    selectView(activeView);
     renderDiscoveryCandidates(current);
     const list = app.querySelector('.candidates')!;
     if (!candidates.length) {
@@ -237,23 +352,11 @@ async function start() {
       for (const candidate of candidates) {
         const li = document.createElement('li');
         li.className = 'candidate-card';
-        const media = document.createElement('div');
-        media.className = 'candidate-media';
-        const imageFallback = document.createElement('span');
-        imageFallback.textContent = 'No image';
-        const imageUrl = safeSourceUrl(candidate.products.image_url);
-        if (imageUrl) {
-          const image = document.createElement('img');
-          image.src = imageUrl;
-          image.alt = candidate.products.title;
-          image.loading = 'lazy';
-          image.decoding = 'async';
-          image.referrerPolicy = 'no-referrer';
-          image.addEventListener('error', () => { media.replaceChildren(imageFallback); }, { once: true });
-          media.append(image);
-        } else {
-          media.append(imageFallback);
-        }
+        const media = imageCarousel(
+          candidate.products.title,
+          [...candidate.products.image_urls, candidate.products.image_url],
+          'candidate-media',
+        );
         const body = document.createElement('div');
         body.className = 'candidate-body';
         const heading = document.createElement('div');

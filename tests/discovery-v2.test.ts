@@ -24,6 +24,7 @@ function product(
     title,
     supplierSku: null,
     imageUrl: `https://example.com/${id}.jpg`,
+    imageUrls: [`https://example.com/${id}.jpg`],
     sourceUrl: `https://example.com/${id}`,
     category: 'Pet Supplies > Cat Toys',
     costRange: { minAmount: '3.00', maxAmount: '5.00', currency: 'USD' },
@@ -225,6 +226,49 @@ test('raw-candidate budget is enforced on the final supplier page', async () => 
   assert.equal(run.metrics.productsFetched, 5);
   assert.equal(run.metrics.uniqueProductsFound, 5);
   assert.equal(run.metrics.stoppingReason, 'raw_candidate_budget_reached');
+});
+
+test('ranked shortlist media is enriched within the shared API budget', async () => {
+  const base = product('gallery', 'Interactive Cat Toy');
+  const adapter: SupplierAdapter = {
+    provider: 'fixture',
+    providerName: 'Fixture supplier',
+    discovery: { search: async () => ({
+      products: [base],
+      nextCursor: null,
+      totalResults: 1,
+      source: 'fixture-list',
+      retrievedAt: '2026-09-30T10:00:00Z',
+      rawPayload: { page: 1 },
+    }) },
+    media: { getProductImages: async (externalProductId) => ({
+      externalProductId,
+      imageUrls: [base.imageUrls[0]!, 'https://example.com/gallery-side.jpg'],
+      source: 'fixture-detail',
+      retrievedAt: '2026-09-30T10:01:00Z',
+      rawPayload: { detail: true },
+    }) },
+  };
+  const profile: DiscoveryProfile = {
+    ...pets,
+    enabledStrategies: ['original_query'],
+    search: { ...pets.search, maxExpansions: 0 },
+  };
+  const run = await runProductDiscovery(adapter, {
+    query: 'cat toy',
+    profile,
+    budget: {
+      maxApiRequests: 2, maxPagesPerStrategy: 1, maxRawCandidates: 10,
+      maxEnrichments: 1, pageSize: 10,
+    },
+  });
+  assert.equal(run.metrics.apiRequestsUsed, 2);
+  assert.equal(run.metrics.enrichmentsUsed, 1);
+  assert.deepEqual(run.candidates[0]!.product.imageUrls, [
+    'https://example.com/gallery.jpg',
+    'https://example.com/gallery-side.jpg',
+  ]);
+  assert.equal(run.sourcePages[1]!.strategy, 'media_enrichment');
 });
 
 test('a second niche reuses the same discovery and assessment pipeline', async () => {

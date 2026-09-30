@@ -42,6 +42,10 @@ test('CJ adapter authenticates once and normalizes a product with explicit varia
   assert.equal(snapshot.product.title, 'Catnip Balls Cat Treats Rotary Molar Teeth Cleaning');
   assert.equal(snapshot.product.description, 'Product Details:\nFlavor: Mint & catnip');
   assert.equal(snapshot.product.imageUrl, 'https://cf.cjdropshipping.com/product/catnip-balls.jpg');
+  assert.deepEqual(snapshot.product.imageUrls, [
+    'https://cf.cjdropshipping.com/product/catnip-balls.jpg',
+    'https://cf.cjdropshipping.com/product/catnip-balls-alt.jpg',
+  ]);
   assert.equal(snapshot.product.sourceUrl,
     'https://cjdropshipping.com/product/catnip-balls-cat-treats-rotary-molar-teeth-cleaning-p-1561984433618694144.html');
   assert.equal(snapshot.product.variants.length, 2);
@@ -61,6 +65,11 @@ test('CJ adapter authenticates once and normalizes a product with explicit varia
     },
   });
   assert.ok('product' in (snapshot.rawPayload as Record<string, unknown>));
+
+  const media = await adapter.media.getProductImages('1561984433618694144');
+  assert.deepEqual(media.imageUrls, snapshot.product.imageUrls);
+  assert.equal(media.source, 'cj-api-v2:product/query');
+  assert.equal(calls.length, 5);
 });
 
 test('CJ adapter exposes provider failures without converting them into empty products', async () => {

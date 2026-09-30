@@ -66,7 +66,7 @@ The bounded **CJ product-by-ID ingestion** slice is implemented as follows:
 
 The ingestion migration is deployed, a real CJ candidate is imported, and the dashboard read model shows supplier cost, variant count, stock, freshness, source, and image.
 
-Discovery V2 now has a provider-neutral application entry point with configurable profiles, deterministic and optional local-model query expansion, explicit strategy budgets, controlled pagination, occurrence provenance, partial-failure handling, relevance levels, separate eligibility, and versioned score components. A service-role-only transaction persists run metadata, queries, candidate assessments, supplier observations, and private raw pages. The browser reads only normalized discovery records through RLS. The Discovery V2 migration must be applied to hosted Supabase before running the persistent command.
+Discovery V2 now has a provider-neutral application entry point with configurable profiles, deterministic and optional local-model query expansion, explicit search and media budgets, controlled pagination, occurrence provenance, partial-failure handling, relevance levels, separate eligibility, and versioned score components. A service-role-only transaction persists run metadata, queries, candidate assessments, supplier observations, normalized image galleries, and private raw pages. The browser reads only normalized discovery records through RLS and separates searched candidates from imported products in top-level tabs.
 
 Scheduling, external market validation, destination shipping, economics, maintenance, channel publishing, fulfillment, and external-orchestrator integration remain separate future layers.
 
