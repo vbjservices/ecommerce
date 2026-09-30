@@ -29,3 +29,26 @@ export interface SupplierProduct {
     stock: Observation<number>;
   }>;
 }
+
+/** Lightweight supplier facts used for discovery before full product ingestion. */
+export interface SupplierDiscoveryProduct {
+  externalProductId: string;
+  title: string;
+  supplierSku: string | null;
+  imageUrl: string | null;
+  sourceUrl: string;
+  category: string | null;
+  costRange: {
+    minAmount: string;
+    maxAmount: string;
+    currency: string;
+  } | null;
+  listedCount: number | null;
+  inventory: number | null;
+  verifiedInventory: number | null;
+  createdAt: Timestamp | null;
+  deliveryDays: { min: number; max: number } | null;
+  hasVideo: boolean | null;
+  freeShipping: boolean | null;
+  customizable: boolean | null;
+}

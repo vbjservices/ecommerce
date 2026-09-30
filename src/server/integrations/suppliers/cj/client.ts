@@ -42,12 +42,27 @@ export class CjClient {
   private accessToken: string | null = null;
   private accessTokenExpiresAt = 0;
   private authenticationInFlight: Promise<string> | null = null;
+  private requestQueue: Promise<void> = Promise.resolve();
+  private nextRequestAt = 0;
 
   constructor(
     private readonly apiKey: string,
     private readonly fetchImpl: Fetch = fetch,
     private readonly baseUrl = 'https://developers.cjdropshipping.com/api2.0/v1',
+    private readonly minimumRequestIntervalMs = 1_100,
   ) {}
+
+  private async waitForRequestSlot() {
+    if (this.minimumRequestIntervalMs <= 0) return;
+    const previous = this.requestQueue;
+    let release = () => {};
+    this.requestQueue = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    const wait = Math.max(0, this.nextRequestAt - Date.now());
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    this.nextRequestAt = Date.now() + this.minimumRequestIntervalMs;
+    release();
+  }
 
   private async parseResponse(response: Response) {
     let raw: unknown;
@@ -74,6 +89,7 @@ export class CjClient {
   }
 
   private async requestAccessToken() {
+    await this.waitForRequestSlot();
     let response: Response;
     try {
       response = await this.fetchImpl(`${this.baseUrl}/authentication/getAccessToken`, {
@@ -98,6 +114,7 @@ export class CjClient {
     retryAuthentication = true,
   ): Promise<z.infer<typeof envelope>> {
     const token = await this.authenticate();
+    await this.waitForRequestSlot();
     let response: Response;
     try {
       response = await this.fetchImpl(`${this.baseUrl}${path}`, {

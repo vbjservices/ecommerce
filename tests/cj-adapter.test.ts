@@ -30,7 +30,7 @@ test('CJ adapter authenticates once and normalizes a product with explicit varia
       headers: { 'Content-Type': 'application/json' },
     });
   };
-  const adapter = new CjSupplierAdapter(new CjClient('private-api-key', fetchMock, 'https://cj.test'));
+  const adapter = new CjSupplierAdapter(new CjClient('private-api-key', fetchMock, 'https://cj.test', 0));
   const snapshot = await adapter.catalog.getProduct('1561984433618694144');
 
   assert.equal(calls.filter((call) => call.url.endsWith('/authentication/getAccessToken')).length, 1);
@@ -72,7 +72,7 @@ test('CJ adapter exposes provider failures without converting them into empty pr
     }
     return Response.json({ code: 503, result: false, message: 'Provider unavailable', data: null });
   };
-  const adapter = new CjSupplierAdapter(new CjClient('key', fetchMock, 'https://cj.test'));
+  const adapter = new CjSupplierAdapter(new CjClient('key', fetchMock, 'https://cj.test', 0));
   await assert.rejects(
     adapter.catalog.getProduct('1561984433618694144'),
     (error: unknown) => error instanceof IntegrationError && error.code === 'unavailable',

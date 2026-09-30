@@ -61,6 +61,20 @@ test('repository does not convert failed or malformed reads into a valid empty w
   await assert.rejects(readRecentCandidates(client(null, new Error('raw secret error'))), /^Error: Candidates could not be loaded/);
   await assert.rejects(readRecentCandidates(client([{ status: 'invented' }], null)), /expected format/);
   assert.deepEqual(await readRecentCandidates(client([], null)), []);
+  const row = {
+    id: '00000000-0000-4000-8000-000000000010',
+    status: 'discovered',
+    created_at: '2026-09-29T10:00:00Z',
+    products: { title: 'Candidate' },
+    supplier_products: {
+      external_product_id: 'supplier-product',
+      source_url: 'https://example.com/product',
+      last_seen_at: '2026-09-29T10:00:00Z',
+      suppliers: { name: 'Supplier' },
+      supplier_variants: [{ cost: 3.16, currency: 'USD', stock: 10 }],
+    },
+  };
+  assert.deepEqual(await readRecentCandidates(client([row], null)), [row]);
 });
 
 test('workspace cache is page-memory only and expires after five minutes', () => {

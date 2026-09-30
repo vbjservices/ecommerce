@@ -82,10 +82,11 @@ Apply all migrations first. The supplier-ingestion migration exposes one service
 Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `CJ_API_KEY` in the ignored `.env.local` or `.env`, then run:
 
 ```sh
+npm run cj:search -- "catnip"
 npm run cj:import -- 1561984433618694144
 ```
 
-A CJ product URL is also accepted. Repeating the command updates the same mapped product and variants, creates another private historical snapshot, and does not duplicate the candidate. The command never prints credentials, access tokens, or raw provider responses.
+Search is read-only and does not import its ranked results. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
 
 ## 6. Publish using the existing Pages setting
 

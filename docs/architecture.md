@@ -64,6 +64,8 @@ The bounded **CJ product-by-ID ingestion** slice is implemented as follows:
 3. Contract and PostgreSQL tests prove repeat imports do not duplicate identities, unknown values remain null, browser roles cannot execute ingestion, and invalid variant batches roll back.
 4. `npm run cj:import -- PRODUCT_ID_OR_URL` runs the slice from a trusted machine with server-only credentials.
 
-Next, deploy the migration and import a real candidate into the development project. Then extend the dashboard read model with the deliberate fields needed for candidate inspection before adding authenticated review and Shopify draft creation.
+The migration is deployed, a real CJ candidate is imported, and the dashboard read model shows supplier cost, variant count, stock, freshness, and source. Next, persist scheduled discovery runs and enrich shortlisted products with destination-specific shipping facts before adding authenticated review and Shopify draft creation.
+
+The first read-only discovery/ranking slice and the planned scraping boundaries are documented in [Product discovery and search](discovery.md).
 
 Do not add scoring, bulk discovery, purchases, or customer-facing publication to this slice.

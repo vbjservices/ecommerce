@@ -1,7 +1,12 @@
 import '../../../only';
 import { z } from 'zod';
 import { IntegrationError } from '../../../../application/ports/integration-error';
-import type { SupplierAdapter, SupplierSnapshot } from '../../../../application/ports/supplier-adapter';
+import type {
+  SupplierAdapter,
+  SupplierDiscoveryInput,
+  SupplierDiscoverySnapshot,
+  SupplierSnapshot,
+} from '../../../../application/ports/supplier-adapter';
 import type { Json } from '../../../../domain/shared';
 import { CjClient } from './client';
 
@@ -29,6 +34,35 @@ const stockData = z.object({
     inventory: z.array(z.object({
       totalInventory: z.number().int().nonnegative().nullish(),
     }).passthrough()),
+  }).passthrough()),
+}).passthrough();
+
+const discoveryProduct = z.object({
+  id: z.string().min(1),
+  nameEn: z.string().min(1),
+  sku: z.string().nullish(),
+  bigImage: z.string().nullish(),
+  sellPrice: z.string().nullish(),
+  nowPrice: z.string().nullish(),
+  discountPrice: z.string().nullish(),
+  listedNum: z.number().int().nonnegative().nullish(),
+  threeCategoryName: z.string().nullish(),
+  categoryId: z.string().nullish(),
+  addMarkStatus: z.number().int().nullish(),
+  isVideo: z.number().int().nullish(),
+  createAt: z.number().finite().nullish(),
+  warehouseInventoryNum: z.number().int().nonnegative().nullish(),
+  totalVerifiedInventory: z.number().int().nonnegative().nullish(),
+  customization: z.number().int().nullish(),
+  deliveryCycle: z.string().nullish(),
+}).passthrough();
+
+const discoveryData = z.object({
+  pageNumber: z.number().int().positive(),
+  totalRecords: z.number().int().nonnegative(),
+  totalPages: z.number().int().nonnegative(),
+  content: z.array(z.object({
+    productList: z.array(discoveryProduct),
   }).passthrough()),
 }).passthrough();
 
@@ -74,12 +108,116 @@ function costAmount(value: string | number) {
   return amount;
 }
 
+function priceRange(value: string | null | undefined) {
+  if (!value) return null;
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?$/);
+  if (!match) return null;
+  return {
+    minAmount: match[1]!,
+    maxAmount: match[2] ?? match[1]!,
+    currency: 'USD',
+  };
+}
+
+function deliveryDays(value: string | null | undefined) {
+  if (!value) return null;
+  const match = value.trim().match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+  if (!match) return null;
+  const min = Number(match[1]);
+  const max = Number(match[2] ?? match[1]);
+  return Number.isSafeInteger(min) && Number.isSafeInteger(max) && max >= min
+    ? { min, max }
+    : null;
+}
+
+function decimalFilter(value: string | undefined) {
+  if (value === undefined) return undefined;
+  const normalized = value.trim();
+  if (!decimal.test(normalized)) throw new IntegrationError('invalid_payload', 'cj');
+  return normalized;
+}
+
 export class CjSupplierAdapter implements SupplierAdapter {
   readonly provider = 'cj';
   readonly providerName = 'CJdropshipping';
   readonly catalog = { getProduct: (externalProductId: string) => this.getProduct(externalProductId) };
+  readonly discovery = { search: (input: SupplierDiscoveryInput) => this.search(input) };
 
   constructor(private readonly client: CjClient) {}
+
+  private async search(input: SupplierDiscoveryInput): Promise<SupplierDiscoverySnapshot> {
+    const query = input.query.trim();
+    const page = input.cursor === undefined ? 1 : Number(input.cursor);
+    const limit = input.limit ?? 50;
+    if (!query || query.length > 200 || !Number.isSafeInteger(page) || page < 1 || page > 1_000 ||
+        !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new IntegrationError('invalid_payload', this.provider);
+    }
+    const country = input.filters?.warehouseCountry;
+    if (country !== undefined && !/^[A-Z]{2}$/.test(country)) {
+      throw new IntegrationError('invalid_payload', this.provider);
+    }
+    const minCost = decimalFilter(input.filters?.minCost);
+    const maxCost = decimalFilter(input.filters?.maxCost);
+    const minInventory = input.filters?.minInventory;
+    if (minInventory !== undefined && (!Number.isSafeInteger(minInventory) || minInventory < 0)) {
+      throw new IntegrationError('invalid_payload', this.provider);
+    }
+    const orderBy = {
+      relevance: '0', listings: '1', cost: '2', newest: '3', inventory: '4',
+    }[input.sortBy ?? 'relevance'];
+    const params = new URLSearchParams({
+      keyWord: query,
+      page: String(page),
+      size: String(limit),
+      sort: input.sortDirection ?? 'desc',
+      orderBy,
+    });
+    params.append('features', 'enable_category');
+    if (input.filters?.categoryId) params.set('categoryId', input.filters.categoryId);
+    if (country) params.set('countryCode', country);
+    if (minCost) params.set('startSellPrice', minCost);
+    if (maxCost) params.set('endSellPrice', maxCost);
+    if (minInventory !== undefined) params.set('startWarehouseInventory', String(minInventory));
+    if (input.filters?.verifiedOnly) params.set('verifiedWarehouse', '1');
+
+    const response = await this.client.get(`/product/listV2?${params}`);
+    const parsed = discoveryData.safeParse(response.data);
+    if (!parsed.success) throw new IntegrationError('invalid_payload', this.provider);
+    const retrievedAt = new Date().toISOString();
+    const products = parsed.data.content.flatMap((group) => group.productList).map((product) => ({
+      externalProductId: product.id,
+      title: product.nameEn.trim(),
+      supplierSku: product.sku?.trim() || null,
+      imageUrl: product.bigImage?.trim() || null,
+      sourceUrl: productUrl(product.nameEn, product.id),
+      category: product.threeCategoryName?.trim() || product.categoryId?.trim() || null,
+      costRange: priceRange(product.discountPrice ?? product.nowPrice ?? product.sellPrice),
+      listedCount: product.listedNum ?? null,
+      inventory: product.warehouseInventoryNum ?? null,
+      verifiedInventory: product.totalVerifiedInventory ?? null,
+      createdAt: product.createAt === null || product.createAt === undefined
+        ? null
+        : new Date(product.createAt).toISOString(),
+      deliveryDays: deliveryDays(product.deliveryCycle),
+      hasVideo: product.isVideo === null || product.isVideo === undefined
+        ? null : product.isVideo === 1,
+      freeShipping: product.addMarkStatus === null || product.addMarkStatus === undefined
+        ? null : product.addMarkStatus === 1,
+      customizable: product.customization === null || product.customization === undefined
+        ? null : product.customization === 1,
+    }));
+    return {
+      products,
+      nextCursor: parsed.data.pageNumber < parsed.data.totalPages
+        ? String(parsed.data.pageNumber + 1)
+        : null,
+      totalResults: parsed.data.totalRecords,
+      source: 'cj-api-v2:product/listV2',
+      retrievedAt,
+      rawPayload: response as unknown as Json,
+    };
+  }
 
   private async getProduct(externalProductId: string): Promise<SupplierSnapshot> {
     if (!identifier.test(externalProductId)) {

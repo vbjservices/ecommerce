@@ -13,6 +13,15 @@ npm ci
 npm run dev
 ```
 
+Trusted CJ tools use server-only environment values:
+
+```sh
+npm run cj:search -- "cat toy"   # ranked preview; no database writes
+npm run cj:import -- PRODUCT_ID  # atomic candidate ingestion
+```
+
+See [product discovery and search](docs/discovery.md) for ranking, caching, and scraping direction.
+
 Without configuration the page displays **Workspace setup pending**. To enable sign-in, follow [Supabase setup](docs/setup.md). No demo credentials, users, or business records are created.
 
 ## Structure
@@ -50,8 +59,8 @@ Tests run migrations in ephemeral PostgreSQL through PGlite with a minimal Supab
 
 ## Scope
 
-Implemented: sign-in/out and session checks, explicit internal membership, five-minute in-memory workspace caching, quiet stale refreshes, a restrictive production Content Security Policy, read-only recent candidates, neutral domain/adapter contracts, CJ product/variant/inventory reads, atomic idempotent supplier ingestion, source-ID mappings, private historical raw snapshots, migrations, and security tests.
+Implemented: sign-in/out and session checks, explicit internal membership, five-minute in-memory workspace caching, quiet stale refreshes, a restrictive production Content Security Policy, supplier-fact candidate cards, neutral domain/adapter contracts, CJ product/variant/inventory reads, rate-limited CJ catalog search, explainable discovery ranking, atomic idempotent supplier ingestion, source-ID mappings, private historical raw snapshots, migrations, and security tests.
 
-Deferred: discovery/search automation, scoring, approval writes/audit workflow, listing persistence, order persistence, webhooks, queues, shipping quotes, purchasing, fulfillment, and tracking. There is no public signup or multi-tenant system.
+Deferred: durable scheduled discovery runs, external research/scraping adapters, shipping quotes, approval writes/audit workflow, listing persistence, order persistence, webhooks, queues, purchasing, fulfillment, and tracking. There is no public signup or multi-tenant system.
 
-Next: deploy the CJ ingestion migration, import the first real product, then enrich the protected dashboard candidate read model.
+Next: persist scheduled discovery runs and source observations, then enrich the shortlist with Netherlands shipping quotes before human review.

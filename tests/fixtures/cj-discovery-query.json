@@ -1,0 +1,60 @@
+{
+  "code": 200,
+  "result": true,
+  "success": true,
+  "message": "Success",
+  "data": {
+    "pageSize": 2,
+    "pageNumber": 1,
+    "totalRecords": 3,
+    "totalPages": 2,
+    "content": [
+      {
+        "productList": [
+          {
+            "id": "product-high-confidence",
+            "nameEn": "Interactive Cat Puzzle Toy",
+            "sku": "CAT-PUZZLE",
+            "bigImage": "https://example.com/cat-puzzle.jpg",
+            "sellPrice": "4.50-6.00",
+            "nowPrice": null,
+            "discountPrice": null,
+            "listedNum": 740,
+            "categoryId": "cat-toys",
+            "threeCategoryName": "Pet Chase Toys",
+            "addMarkStatus": 0,
+            "isVideo": 1,
+            "createAt": 1740787200000,
+            "warehouseInventoryNum": 5100,
+            "totalVerifiedInventory": 5000,
+            "customization": 0,
+            "deliveryCycle": "3-5"
+          },
+          {
+            "id": "product-review-needed",
+            "nameEn": "Cat Treat Food Ball",
+            "sku": "CAT-TREAT",
+            "bigImage": null,
+            "sellPrice": "2.00",
+            "nowPrice": "1.75",
+            "discountPrice": "1.60",
+            "listedNum": 20,
+            "categoryId": "cat-food",
+            "threeCategoryName": "Cat Treats",
+            "addMarkStatus": 1,
+            "isVideo": 0,
+            "createAt": 1609459200000,
+            "warehouseInventoryNum": 600,
+            "totalVerifiedInventory": 100,
+            "customization": 0,
+            "deliveryCycle": "9-12"
+          }
+        ],
+        "relatedCategoryList": [],
+        "keyWord": "cat toy",
+        "keyWordOld": "cat toy"
+      }
+    ]
+  },
+  "requestId": "discovery-request"
+}

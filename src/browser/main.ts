@@ -77,12 +77,56 @@ async function start() {
     return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(fetchedAt);
   }
 
+  function supplierCost(candidate: WorkspaceSnapshot['candidates'][number]) {
+    const priced = candidate.supplier_products.supplier_variants.filter(
+      (variant): variant is typeof variant & { cost: number | string; currency: string } =>
+        variant.cost !== null && variant.currency !== null,
+    );
+    if (!priced.length) return 'Unknown';
+    const currencies = new Set(priced.map((variant) => variant.currency));
+    if (currencies.size !== 1) return 'Multiple currencies';
+    const values = priced.map((variant) => Number(variant.cost));
+    if (values.some((value) => !Number.isFinite(value))) return 'Unknown';
+    const currency = priced[0]!.currency;
+    const formatter = new Intl.NumberFormat(undefined, { style: 'currency', currency });
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    return min === max ? formatter.format(min) : `${formatter.format(min)} \u2013 ${formatter.format(max)}`;
+  }
+
+  function supplierStock(candidate: WorkspaceSnapshot['candidates'][number]) {
+    const known = candidate.supplier_products.supplier_variants
+      .map((variant) => variant.stock)
+      .filter((stock): stock is number => stock !== null);
+    return known.length
+      ? new Intl.NumberFormat().format(known.reduce((total, stock) => total + stock, 0))
+      : 'Unknown';
+  }
+
+  function metric(label: string, value: string) {
+    const item = document.createElement('div');
+    const term = document.createElement('dt');
+    const detail = document.createElement('dd');
+    term.textContent = label;
+    detail.textContent = value;
+    item.append(term, detail);
+    return item;
+  }
+
+  function safeSourceUrl(value: string | null) {
+    if (!value) return null;
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' ? url.href : null;
+    } catch { return null; }
+  }
+
   function renderWorkspace(current: WorkspaceSnapshot, status = `Updated ${cacheTime(current.fetchedAt)}`) {
     const { access, candidates } = current;
     app.innerHTML = `<section class="workspace"><div class="workspace-heading"><div><p class="eyebrow">Overview</p><h1>Product workspace</h1></div><div class="actions"></div></div>
       <p class="account"></p><section class="panel"><div class="section-heading"><h2>Recent candidates</h2><span class="badge">Read only</span></div>
       <div class="candidates"></div></section><p class="footnote refresh-status" role="status"></p>
-      <p class="footnote">Product discovery and review actions will be added in the next phase.</p></section>`;
+      <p class="footnote">Costs and stock are supplier snapshots. Shipping, market demand, and margin still need enrichment before review.</p></section>`;
     app.querySelector('.account')!.textContent = `Signed in as ${access.email}`;
     app.querySelector('.refresh-status')!.textContent = status;
     action('Refresh', () => { void refresh({ force: true, background: true }); });
@@ -92,14 +136,46 @@ async function start() {
       list.innerHTML = '<div class="empty"><span class="empty-mark" aria-hidden="true">＋</span><h3>No candidates yet</h3><p>Products will appear here after the first supplier import.</p></div>';
     } else {
       const ul = document.createElement('ul');
+      ul.className = 'candidate-list';
       for (const candidate of candidates) {
         const li = document.createElement('li');
+        li.className = 'candidate-card';
+        const heading = document.createElement('div');
+        heading.className = 'candidate-heading';
+        const identity = document.createElement('div');
         const title = document.createElement('strong');
         title.textContent = candidate.products.title;
+        const supplier = document.createElement('p');
+        supplier.className = 'candidate-supplier';
+        supplier.textContent = `${candidate.supplier_products.suppliers.name} \u00b7 ${candidate.supplier_products.external_product_id}`;
+        identity.append(title, supplier);
         const status = document.createElement('span');
         status.className = 'badge';
         status.textContent = candidate.status.replaceAll('_', ' ');
-        li.append(title, status);
+        heading.append(identity, status);
+
+        const facts = document.createElement('dl');
+        facts.className = 'candidate-facts';
+        facts.append(
+          metric('Supplier cost', supplierCost(candidate)),
+          metric('Variants', String(candidate.supplier_products.supplier_variants.length)),
+          metric('Reported stock', supplierStock(candidate)),
+          metric('Last checked', new Intl.DateTimeFormat(undefined, {
+            dateStyle: 'medium', timeStyle: 'short',
+          }).format(new Date(candidate.supplier_products.last_seen_at))),
+        );
+
+        const sourceUrl = safeSourceUrl(candidate.supplier_products.source_url);
+        li.append(heading, facts);
+        if (sourceUrl) {
+          const link = document.createElement('a');
+          link.className = 'source-link';
+          link.href = sourceUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = 'View supplier product \u2197';
+          li.append(link);
+        }
         ul.append(li);
       }
       list.append(ul);

@@ -34,7 +34,15 @@ button span { margin-left: 12px; }
 .badge { padding: 5px 10px; border: 1px solid var(--border); border-radius: 5px; font-size: 13px; color: var(--muted); white-space: nowrap; }
 .empty { text-align: center; padding: 56px 16px 36px; }
 .empty-mark { border: 1px solid var(--border); border-radius: 12px; width: 48px; height: 48px; display: grid; place-items: center; margin: 0 auto; font-size: 24px; color: var(--accent); }
-ul { list-style: none; margin: 24px 0 0; padding: 0; }
-li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 0; border-top: 1px solid var(--border); }
-li strong { font-size: 16px; overflow-wrap: anywhere; }
-@media (max-width: 600px) { .topbar { padding: 0 20px; height: 72px; } .internal { max-width: 90px; text-align: right; } main { padding: 24px 16px; } .narrow { padding: 28px 24px; margin: 24px auto; } .panel { padding: 24px; } .workspace-heading { align-items: flex-start; flex-direction: column; } .account { margin-top: 20px; } li { flex-wrap: wrap; } }
+.candidate-list { list-style: none; margin: 24px 0 0; padding: 0; }
+.candidate-card { display: grid; gap: 18px; padding: 24px 0; border-top: 1px solid var(--border); }
+.candidate-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.candidate-heading strong { display: block; font-size: 17px; overflow-wrap: anywhere; }
+.candidate-supplier { color: var(--muted); font-size: 13px; margin: 5px 0 0; overflow-wrap: anywhere; }
+.candidate-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 0; }
+.candidate-facts div { min-width: 0; }
+.candidate-facts dt { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+.candidate-facts dd { font-size: 14px; font-weight: 600; margin: 4px 0 0; overflow-wrap: anywhere; }
+.source-link { color: var(--accent); font-size: 14px; font-weight: 650; justify-self: start; }
+@media (max-width: 700px) { .candidate-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .topbar { padding: 0 20px; height: 72px; } .internal { max-width: 90px; text-align: right; } main { padding: 24px 16px; } .narrow { padding: 28px 24px; margin: 24px auto; } .panel { padding: 24px; } .workspace-heading { align-items: flex-start; flex-direction: column; } .account { margin-top: 20px; } .candidate-heading { flex-wrap: wrap; } }
