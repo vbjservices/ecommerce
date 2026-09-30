@@ -108,7 +108,11 @@ One service-role-only PostgreSQL RPC atomically persists:
 
 Internal browser users can read normalized public records through RLS and cannot write them. Raw pages remain inaccessible to browser roles and append-only for the service role. Invalid persistence batches roll back completely.
 
-The dashboard separates searched products under **Discovery** from persisted catalog records under **Imported products**. Each lane shows a count and retains its selected tab during quiet refreshes. Products with multiple normalized supplier images use an automatic carousel with keyboard-accessible previous/next controls; reduced-motion preferences disable autoplay. The discovery lane also shows original query, profile, eligibility, score, confidence, coverage, relevance, strategy count, structured positive evidence, review reasons, risks, unknowns, and the safe supplier link. The dashboard remains compatible while additive migrations are pending.
+The dashboard separates searched products under **Discovery** from persisted catalog records under **Imported products**. Each lane shows a count and retains its selected tab during quiet refreshes. Products with multiple normalized supplier images use an automatic carousel; its counter and keyboard-accessible previous/next/pause controls appear only on hover or focus, with controls always available on touch devices. Reduced-motion preferences disable autoplay. The discovery lane also shows supplier cost, reported and verified stock, CJ listing activity, delivery estimate, original query, profile, eligibility, score, confidence, coverage, relevance, strategy count, structured evidence, risks, unknowns, and the safe supplier link.
+
+An authenticated **Import product** action invokes the `import-cj-product` Edge Function. The function verifies the user JWT and active internal membership, keeps the CJ and Supabase secret keys server-side, retrieves the complete product/variant/inventory snapshot, and uses the existing atomic ingestion RPC. A successful import immediately appears in the Imported products lane; repeat imports refresh the existing mapping.
+
+Both lanes currently show shipping as **Not checked**. CJ's product-level free-shipping marker does not prove destination coverage. Worldwide, region-limited, and unavailable states require timestamped freight checks for configured destination countries and representative variants before they can be claimed.
 
 ## Current limits and next work
 

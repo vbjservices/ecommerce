@@ -32,6 +32,9 @@ This file tracks implementation state so proposed capabilities are not confused 
 - Separate Discovery and Imported products dashboard tabs with independent empty states and counts.
 - Budgeted shortlist media enrichment that retains CJ's complete normalized image set.
 - Automatic image carousels with previous/next controls and reduced-motion support.
+- Hover/focus-only carousel overlays so product imagery stays unobstructed while scanning.
+- Supplier cost, stock, listing activity, delivery, variant-enrichment, and shipping-status overview fields.
+- Authenticated one-click CJ import through an internal-membership-gated Supabase Edge Function.
 - Tests covering profiles, deterministic and optional model expansion, malformed/unavailable model output, relevance, exclusions, strategies, pagination, budgets, duplicates, partial failures, second-niche reuse, atomic persistence, privacy, and migration compatibility.
 
 ## Deployment step still required
@@ -43,6 +46,8 @@ npm run cj:discover -- "cat toy" --profile=pets --refresh
 ```
 
 The configuration version is now `discovery-v2.1`, so the first command after deployment also bypasses older cached run keys without `--refresh`. Reimport an existing product to refresh its imported-product gallery if its historical raw snapshot did not contain `productImageSet`.
+
+Set the Edge Function secret `CJ_API_KEY` and deploy `import-cj-product` before using the dashboard import button. Shipping remains `Not checked` until a later freight workflow records destination-specific evidence.
 
 ## Next discovery work
 

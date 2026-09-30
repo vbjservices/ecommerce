@@ -4,6 +4,7 @@ import { createBrowserDatabase } from './supabase';
 import { checkAccess } from './auth';
 import { readRecentCandidates, readRecentDiscoveryCandidates } from './workspace-repository';
 import { isWorkspaceSnapshotFresh, type WorkspaceSnapshot } from './workspace-cache';
+import { NOT_CHECKED_SHIPPING, shippingAvailabilityLabel } from '../domain/shipping';
 
 const app = document.querySelector<HTMLElement>('#app')!;
 const carouselTimers = new Set<number>();
@@ -110,6 +111,32 @@ async function start() {
     return known.length
       ? new Intl.NumberFormat().format(known.reduce((total, stock) => total + stock, 0))
       : 'Unknown';
+  }
+
+  function discoveryCost(candidate: WorkspaceSnapshot['discoveryCandidates'][number]) {
+    const observation = candidate.supplier_product_observations[0];
+    if (observation?.supplier_cost_min === null || observation?.supplier_cost_min === undefined ||
+        observation.supplier_cost_max === null || !observation.currency) return 'Unknown';
+    const min = Number(observation.supplier_cost_min);
+    const max = Number(observation.supplier_cost_max);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return 'Unknown';
+    const formatter = new Intl.NumberFormat(undefined, {
+      style: 'currency', currency: observation.currency,
+    });
+    return min === max ? formatter.format(min) : `${formatter.format(min)} – ${formatter.format(max)}`;
+  }
+
+  function count(value: number | null | undefined) {
+    return value === null || value === undefined ? 'Unknown' : new Intl.NumberFormat().format(value);
+  }
+
+  function deliveryWindow(candidate: WorkspaceSnapshot['discoveryCandidates'][number]) {
+    const observation = candidate.supplier_product_observations[0];
+    if (observation?.delivery_days_min === null || observation?.delivery_days_min === undefined ||
+        observation.delivery_days_max === null) return 'Unknown';
+    return observation.delivery_days_min === observation.delivery_days_max
+      ? `${observation.delivery_days_min} days`
+      : `${observation.delivery_days_min}–${observation.delivery_days_max} days`;
   }
 
   function metric(label: string, value: string) {
@@ -225,6 +252,9 @@ async function start() {
     }
     const ul = document.createElement('ul');
     ul.className = 'discovery-list';
+    const importedProductIds = new Set(current.candidates.map(
+      (candidate) => candidate.supplier_products.external_product_id,
+    ));
     for (const candidate of current.discoveryCandidates) {
       const li = document.createElement('li');
       li.className = 'discovery-card';
@@ -251,12 +281,20 @@ async function start() {
       const facts = document.createElement('dl');
       facts.className = 'candidate-facts discovery-facts';
       const strategyCount = new Set(candidate.discovery_occurrences.map((item) => item.strategy)).size;
+      const observation = candidate.supplier_product_observations[0];
       facts.append(
         metric('Score', String(Math.round(Number(candidate.score)))),
         metric('Confidence', `${Math.round(Number(candidate.confidence))}%`),
         metric('Coverage', `${Math.round(Number(candidate.coverage))}%`),
         metric('Relevance', candidate.relevance_level),
         metric('Strategies', String(strategyCount)),
+        metric('Supplier cost', discoveryCost(candidate)),
+        metric('Reported stock', count(observation?.inventory)),
+        metric('Verified stock', count(observation?.verified_inventory)),
+        metric('CJ listings', count(observation?.listing_count)),
+        metric('Delivery estimate', deliveryWindow(candidate)),
+        metric('Variants', 'After import'),
+        metric('Shipping', shippingAvailabilityLabel(NOT_CHECKED_SHIPPING)),
       );
       const details = document.createElement('details');
       const summary = document.createElement('summary');
@@ -285,6 +323,34 @@ async function start() {
         details.append(group);
       }
       body.append(heading, facts, details);
+      const cardActions = document.createElement('div');
+      cardActions.className = 'card-actions';
+      const importButton = document.createElement('button');
+      importButton.type = 'button';
+      const alreadyImported = importedProductIds.has(candidate.external_product_id);
+      importButton.textContent = alreadyImported ? 'Imported' : 'Import product';
+      importButton.disabled = alreadyImported;
+      const importStatus = document.createElement('span');
+      importStatus.className = 'import-status';
+      importStatus.setAttribute('role', 'status');
+      importButton.addEventListener('click', async () => {
+        importButton.disabled = true;
+        importButton.textContent = 'Importing…';
+        importStatus.textContent = '';
+        const result = await client.functions.invoke('import-cj-product', {
+          body: { discoveryCandidateId: candidate.id },
+        });
+        if (result.error) {
+          importButton.disabled = false;
+          importButton.textContent = 'Try import again';
+          importStatus.textContent = 'Import failed. Check the function deployment and try again.';
+          return;
+        }
+        importButton.textContent = 'Imported';
+        importStatus.textContent = 'Saved to Imported products.';
+        await refresh({ force: true, background: true });
+      });
+      cardActions.append(importButton, importStatus);
       const sourceUrl = safeSourceUrl(candidate.source_url);
       if (sourceUrl) {
         const link = document.createElement('a');
@@ -293,8 +359,9 @@ async function start() {
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         link.textContent = 'View supplier product ↗';
-        body.append(link);
+        cardActions.append(link);
       }
+      body.append(cardActions);
       li.append(imageFrame, body);
       ul.append(li);
     }
@@ -382,6 +449,7 @@ async function start() {
           metric('Last checked', new Intl.DateTimeFormat(undefined, {
             dateStyle: 'medium', timeStyle: 'short',
           }).format(new Date(candidate.supplier_products.last_seen_at))),
+          metric('Shipping', shippingAvailabilityLabel(NOT_CHECKED_SHIPPING)),
         );
 
         const sourceUrl = safeSourceUrl(candidate.supplier_products.source_url);

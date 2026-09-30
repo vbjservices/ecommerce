@@ -62,15 +62,22 @@ button span { margin-left: 12px; }
 .product-carousel { position: relative; display: grid; overflow: hidden; }
 .carousel-track { display: flex; width: 100%; height: 100%; transition: transform 420ms ease; will-change: transform; }
 .carousel-track img { flex: 0 0 100%; min-width: 100%; }
-.carousel-control { position: absolute; z-index: 2; top: 50%; width: 30px; min-height: 38px; padding: 0; transform: translateY(-50%); border: 0; border-radius: 6px; color: white; background: #102f34c9; font-size: 24px; line-height: 1; opacity: .82; }
-.carousel-control:hover { background: #102f34; opacity: 1; }
+.carousel-control { position: absolute; z-index: 2; top: 50%; width: 30px; min-height: 38px; padding: 0; transform: translateY(-50%); border: 0; border-radius: 6px; color: white; background: #102f34c9; font-size: 24px; line-height: 1; opacity: 0; pointer-events: none; transition: opacity 160ms ease, background 160ms ease; }
+.carousel-control:hover { background: #102f34; }
 .carousel-control.previous { left: 6px; }
 .carousel-control.next { right: 6px; }
-.carousel-toggle { position: absolute; z-index: 2; left: 7px; bottom: 6px; width: 25px; min-height: 24px; padding: 0; border: 0; border-radius: 999px; color: white; background: #102f34c9; font-size: 11px; line-height: 1; }
+.carousel-toggle { position: absolute; z-index: 2; left: 7px; bottom: 6px; width: 25px; min-height: 24px; padding: 0; border: 0; border-radius: 999px; color: white; background: #102f34c9; font-size: 11px; line-height: 1; opacity: 0; pointer-events: none; transition: opacity 160ms ease, background 160ms ease; }
 .carousel-toggle:hover { background: #102f34; }
-.carousel-counter { position: absolute; z-index: 2; right: 7px; bottom: 6px; padding: 2px 6px; border-radius: 999px; color: white; background: #102f34c9; font-size: 10px; line-height: 1.5; }
+.carousel-counter { position: absolute; z-index: 2; right: 7px; bottom: 6px; padding: 2px 6px; border-radius: 999px; color: white; background: #102f34c9; font-size: 10px; line-height: 1.5; opacity: 0; transition: opacity 160ms ease; }
+.product-carousel:hover .carousel-control, .product-carousel:focus-within .carousel-control,
+.product-carousel:hover .carousel-toggle, .product-carousel:focus-within .carousel-toggle { opacity: .88; pointer-events: auto; }
+.product-carousel:hover .carousel-counter, .product-carousel:focus-within .carousel-counter { opacity: 1; }
 .discovery-body { min-width: 0; display: grid; gap: 14px; align-content: start; }
-.discovery-facts { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.discovery-facts { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+.card-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.card-actions button { min-height: 38px; padding: 8px 13px; }
+.card-actions button:disabled { cursor: default; }
+.import-status { color: var(--muted); font-size: 13px; }
 .eligibility-pass { color: #126355; border-color: #8fc8bd; background: #eef8f5; }
 .eligibility-review { color: #76520b; border-color: #dfc27f; background: #fff9e9; }
 .eligibility-fail { color: #8c2638; border-color: #deb0b8; background: #fff3f5; }
@@ -82,3 +89,4 @@ summary { color: var(--accent); cursor: pointer; font-weight: 650; }
 @media (max-width: 700px) { .candidate-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .topbar { padding: 0 20px; height: 72px; } .internal { max-width: 90px; text-align: right; } main { padding: 24px 16px; } .narrow { padding: 28px 24px; margin: 24px auto; } .panel { padding: 24px; } .workspace-heading { align-items: flex-start; flex-direction: column; } .account { margin-top: 20px; } .candidate-card, .discovery-card { grid-template-columns: 104px minmax(0, 1fr); gap: 16px; } .candidate-media, .discovery-image { width: 104px; } .candidate-heading { flex-wrap: wrap; } }
 @media (prefers-reduced-motion: reduce) { .carousel-track { transition: none; } }
+@media (hover: none) { .carousel-control, .carousel-toggle { opacity: .88; pointer-events: auto; } .carousel-counter { opacity: 1; } }

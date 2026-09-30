@@ -127,6 +127,7 @@ test('discovery read model tolerates an undeployed migration and validates deplo
   const row = {
     id: '00000000-0000-4000-8000-000000000020',
     rank: 1,
+    external_product_id: 'cj-product-1',
     title: 'Interactive Cat Toy',
     image_url: null,
     image_urls: [],
@@ -141,6 +142,11 @@ test('discovery read model tolerates an undeployed migration and validates deplo
       original_query: 'cat toy', profile_id: 'pets', completed_at: '2026-09-30T10:00:00Z',
     },
     discovery_occurrences: [{ strategy: 'original_query' }],
+    supplier_product_observations: [{
+      supplier_cost_min: '3.00', supplier_cost_max: '5.00', currency: 'USD',
+      listing_count: 100, inventory: 1_000, verified_inventory: 900,
+      delivery_days_min: 3, delivery_days_max: 5,
+    }],
     assessment: {
       positiveEvidence: ['Strong relevance.'],
       unknownEvidence: ['External demand is unknown.'],
@@ -156,6 +162,7 @@ test('discovery read model falls back to the primary image until galleries are m
   const row = {
     id: '00000000-0000-4000-8000-000000000020',
     rank: 1,
+    external_product_id: 'cj-product-1',
     title: 'Interactive Cat Toy',
     image_url: 'https://example.com/cat.jpg',
     source_url: null,
@@ -165,6 +172,7 @@ test('discovery read model falls back to the primary image until galleries are m
     suppliers: { name: 'Supplier' },
     discovery_runs: { original_query: 'cat toy', profile_id: 'pets', completed_at: '2026-09-30T10:00:00Z' },
     discovery_occurrences: [],
+    supplier_product_observations: [],
     assessment: {
       positiveEvidence: [], unknownEvidence: [], eligibility: { reasons: [] }, risks: [],
     },

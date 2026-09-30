@@ -26,3 +26,6 @@ enable_anonymous_sign_ins = false
 [auth.email]
 enable_signup = false
 enable_confirmations = true
+
+[functions.import-cj-product]
+verify_jwt = true

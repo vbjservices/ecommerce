@@ -68,6 +68,8 @@ The ingestion migration is deployed, a real CJ candidate is imported, and the da
 
 Discovery V2 now has a provider-neutral application entry point with configurable profiles, deterministic and optional local-model query expansion, explicit search and media budgets, controlled pagination, occurrence provenance, partial-failure handling, relevance levels, separate eligibility, and versioned score components. A service-role-only transaction persists run metadata, queries, candidate assessments, supplier observations, normalized image galleries, and private raw pages. The browser reads only normalized discovery records through RLS and separates searched candidates from imported products in top-level tabs.
 
+The static dashboard never receives CJ or service-role credentials. Its import action sends only a discovery-candidate UUID with the signed-in user's JWT to `import-cj-product`. That Edge Function rechecks active membership, resolves the supplier product through RLS, calls CJ with its project secret, and enters the existing atomic ingestion boundary. Shipping scope is deliberately shown as unknown until destination-specific freight observations exist; a free-shipping catalog flag is not treated as worldwide availability.
+
 Scheduling, external market validation, destination shipping, economics, maintenance, channel publishing, fulfillment, and external-orchestrator integration remain separate future layers.
 
 The first read-only discovery/ranking slice and the planned scraping boundaries are documented in [Product discovery and search](discovery.md).

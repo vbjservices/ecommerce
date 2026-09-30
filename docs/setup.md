@@ -91,6 +91,18 @@ npm run cj:discover -- "cat toy" --profile=pets
 
 `cj:search` is the legacy read-only preview and does not persist results. `cj:discover` executes the budgeted V2 pipeline and atomically persists its run, query plan, ranked candidates, occurrences, normalized observations, shortlist image galleries, and private raw pages. Apply `20260930000200_discovery_runs.sql` and `20260930000300_product_image_galleries.sql` before using it. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product, image gallery, and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
 
+### Deploy one-click product import
+
+The dashboard's **Import product** action calls the authenticated `import-cj-product` Supabase Edge Function. In **Edge Functions → Secrets**, add `CJ_API_KEY` with the same private CJ API key used by the CLI. Supabase injects its own URL and secret keys; do not create browser variables for them.
+
+Deploy the committed function from the linked project:
+
+```sh
+npx --yes supabase@2.117.0 functions deploy import-cj-product --use-api
+```
+
+Keep JWT verification enabled. The function checks the signed-in user against `private.internal_users` through `is_internal_user()` before reading a discovery candidate or invoking privileged ingestion. Test by importing one Discovery card and confirming that it changes to **Imported** and appears in the Imported products tab.
+
 ## 6. Publish using the existing Pages setting
 
 Keep **Settings → Pages → Deploy from a branch → main → / (root)**. GitHub Pages serves the generated `index.html` and `assets/`; it does not run Node, migrations, or server modules.

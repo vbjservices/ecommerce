@@ -26,6 +26,7 @@ export type CandidateSummary = z.infer<typeof candidateSummary>;
 const discoveryCandidateSummary = z.object({
   id: z.uuid(),
   rank: z.number().int().positive(),
+  external_product_id: z.string(),
   title: z.string(),
   image_url: z.string().nullable(),
   image_urls: z.array(z.string()),
@@ -42,6 +43,16 @@ const discoveryCandidateSummary = z.object({
     completed_at: z.string(),
   }),
   discovery_occurrences: z.array(z.object({ strategy: z.string() })),
+  supplier_product_observations: z.array(z.object({
+    supplier_cost_min: z.union([z.number().nonnegative(), z.string()]).nullable(),
+    supplier_cost_max: z.union([z.number().nonnegative(), z.string()]).nullable(),
+    currency: z.string().nullable(),
+    listing_count: z.number().int().nonnegative().nullable(),
+    inventory: z.number().int().nonnegative().nullable(),
+    verified_inventory: z.number().int().nonnegative().nullable(),
+    delivery_days_min: z.number().int().nonnegative().nullable(),
+    delivery_days_max: z.number().int().nonnegative().nullable(),
+  })).max(1),
   assessment: z.object({
     positiveEvidence: z.array(z.string()),
     unknownEvidence: z.array(z.string()),
@@ -109,10 +120,13 @@ export async function readRecentDiscoveryCandidates(
   client: SupabaseClient,
 ): Promise<DiscoveryCandidateSummary[]> {
   const result = await client.from('discovery_candidates')
-    .select(`id,rank,title,image_url,image_urls,source_url,eligibility_status,relevance_level,
+    .select(`id,rank,external_product_id,title,image_url,image_urls,source_url,eligibility_status,relevance_level,
       score,confidence,coverage,assessment,suppliers!inner(name),
       discovery_runs!inner(original_query,profile_id,completed_at),
-      discovery_occurrences(strategy)`)
+      discovery_occurrences(strategy),supplier_product_observations(
+        supplier_cost_min,supplier_cost_max,currency,listing_count,inventory,
+        verified_inventory,delivery_days_min,delivery_days_max
+      )`)
     .order('created_at', { ascending: false })
     .order('rank', { ascending: true })
     .limit(20);
@@ -121,10 +135,13 @@ export async function readRecentDiscoveryCandidates(
   let error = result.error;
   if (error?.code === '42703' || error?.code === 'PGRST204') {
     const primaryOnly = await client.from('discovery_candidates')
-      .select(`id,rank,title,image_url,source_url,eligibility_status,relevance_level,
+      .select(`id,rank,external_product_id,title,image_url,source_url,eligibility_status,relevance_level,
         score,confidence,coverage,assessment,suppliers!inner(name),
         discovery_runs!inner(original_query,profile_id,completed_at),
-        discovery_occurrences(strategy)`)
+        discovery_occurrences(strategy),supplier_product_observations(
+          supplier_cost_min,supplier_cost_max,currency,listing_count,inventory,
+          verified_inventory,delivery_days_min,delivery_days_max
+        )`)
       .order('created_at', { ascending: false })
       .order('rank', { ascending: true })
       .limit(20);
