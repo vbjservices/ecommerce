@@ -77,6 +77,33 @@ test('repository does not convert failed or malformed reads into a valid empty w
   assert.deepEqual(await readRecentCandidates(client([row], null)), [row]);
 });
 
+test('repository stays readable during the additive product image migration', async () => {
+  let calls = 0;
+  const row = {
+    id: '00000000-0000-4000-8000-000000000010',
+    status: 'discovered',
+    created_at: '2026-09-29T10:00:00Z',
+    products: { title: 'Candidate' },
+    supplier_products: {
+      external_product_id: 'supplier-product', source_url: null,
+      last_seen_at: '2026-09-29T10:00:00Z', suppliers: { name: 'Supplier' },
+      supplier_variants: [],
+    },
+  };
+  const client = {
+    from: () => ({ select: () => ({ order: () => ({ limit: async () => {
+      calls++;
+      return calls === 1
+        ? { data: null, error: { code: '42703' } }
+        : { data: [row], error: null };
+    } }) }) }),
+  } as unknown as SupabaseClient;
+  assert.deepEqual(await readRecentCandidates(client), [{
+    ...row, products: { ...row.products, image_url: null },
+  }]);
+  assert.equal(calls, 2);
+});
+
 test('workspace cache is page-memory only and expires after five minutes', () => {
   const fetchedAt = 1_000_000;
   const snapshot: WorkspaceSnapshot = {

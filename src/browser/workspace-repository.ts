@@ -27,8 +27,25 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
       supplier_variants(cost,currency,stock)
     )`)
     .order('created_at', { ascending: false }).limit(20);
-  if (result.error) throw new Error('Candidates could not be loaded. Please try again.');
-  const parsed = z.array(candidateSummary).safeParse(result.data);
+  // Keep the Pages deployment usable while the additive image migration is being applied.
+  let data: unknown = result.data;
+  let error = result.error;
+  if (error?.code === '42703' || error?.code === 'PGRST204') {
+    const legacy = await client.from('product_candidates')
+      .select(`id,status,created_at,products!inner(title),supplier_products!inner(
+        external_product_id,source_url,last_seen_at,suppliers!inner(name),
+        supplier_variants(cost,currency,stock)
+      )`)
+      .order('created_at', { ascending: false }).limit(20);
+    const legacyData = legacy.data as unknown as Array<Record<string, unknown>> | null;
+    error = legacy.error;
+    data = legacyData?.map((candidate) => ({
+        ...candidate,
+        products: { ...(candidate.products as Record<string, unknown>), image_url: null },
+      })) ?? null;
+  }
+  if (error) throw new Error('Candidates could not be loaded. Please try again.');
+  const parsed = z.array(candidateSummary).safeParse(data);
   if (!parsed.success) throw new Error('The workspace data is not in the expected format. Contact an administrator.');
   return parsed.data;
 }
