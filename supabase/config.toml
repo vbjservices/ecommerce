@@ -29,3 +29,6 @@ enable_confirmations = true
 
 [functions.import-cj-product]
 verify_jwt = true
+
+[functions.quote-cj-shipping]
+verify_jwt = true

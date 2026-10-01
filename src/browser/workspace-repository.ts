@@ -2,7 +2,28 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { candidateStatuses } from '../domain/candidates';
 
-const candidateSummary = z.object({
+const supplierVariantSummary = z.object({
+  id: z.uuid(),
+  cost: z.union([z.number().nonnegative(), z.string()]).nullable(),
+  currency: z.string().nullable(),
+  stock: z.number().int().nonnegative().nullable(),
+});
+
+const shippingQuoteSummary = z.object({
+  supplier_variant_id: z.uuid(),
+  destination_country_code: z.string().regex(/^[A-Z]{2}$/),
+  origin_country_code: z.string().regex(/^[A-Z]{2}$/),
+  quantity: z.number().int().positive(),
+  available: z.boolean(),
+  shipping_method: z.string().nullable(),
+  cost: z.union([z.number().nonnegative(), z.string()]).nullable(),
+  currency: z.string().nullable(),
+  delivery_days_min: z.number().int().nonnegative().nullable(),
+  delivery_days_max: z.number().int().nonnegative().nullable(),
+  quoted_at: z.string(),
+});
+
+const candidateBaseSummary = z.object({
   id: z.uuid(), status: z.enum(candidateStatuses), created_at: z.string(),
   products: z.object({
     title: z.string(),
@@ -14,10 +35,13 @@ const candidateSummary = z.object({
     source_url: z.string().nullable(),
     last_seen_at: z.string(),
     suppliers: z.object({ name: z.string() }),
-    supplier_variants: z.array(z.object({
-      cost: z.union([z.number().nonnegative(), z.string()]).nullable(),
-      currency: z.string().nullable(),
-      stock: z.number().int().nonnegative().nullable(),
+    supplier_variants: z.array(supplierVariantSummary),
+  }),
+});
+const candidateSummary = candidateBaseSummary.extend({
+  supplier_products: candidateBaseSummary.shape.supplier_products.extend({
+    supplier_variants: z.array(supplierVariantSummary.extend({
+      shipping_quotes: z.array(shippingQuoteSummary),
     })),
   }),
 });
@@ -71,7 +95,7 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
   const result = await client.from('product_candidates')
     .select(`id,status,created_at,products!inner(title,image_url,image_urls),supplier_products!inner(
       external_product_id,source_url,last_seen_at,suppliers!inner(name),
-      supplier_variants(cost,currency,stock)
+      supplier_variants(id,cost,currency,stock)
     )`)
     .order('created_at', { ascending: false }).limit(20);
   // Keep Pages usable while either additive image migration is being applied.
@@ -81,7 +105,7 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
     const primaryOnly = await client.from('product_candidates')
       .select(`id,status,created_at,products!inner(title,image_url),supplier_products!inner(
         external_product_id,source_url,last_seen_at,suppliers!inner(name),
-        supplier_variants(cost,currency,stock)
+        supplier_variants(id,cost,currency,stock)
       )`)
       .order('created_at', { ascending: false }).limit(20);
     const primaryData = primaryOnly.data as unknown as Array<Record<string, unknown>> | null;
@@ -98,7 +122,7 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
       const legacy = await client.from('product_candidates')
         .select(`id,status,created_at,products!inner(title),supplier_products!inner(
           external_product_id,source_url,last_seen_at,suppliers!inner(name),
-          supplier_variants(cost,currency,stock)
+          supplier_variants(id,cost,currency,stock)
         )`)
         .order('created_at', { ascending: false }).limit(20);
       const legacyData = legacy.data as unknown as Array<Record<string, unknown>> | null;
@@ -110,9 +134,42 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
     }
   }
   if (error) throw new Error('Candidates could not be loaded. Please try again.');
-  const parsed = z.array(candidateSummary).safeParse(data);
-  if (!parsed.success) throw new Error('The workspace data is not in the expected format. Contact an administrator.');
-  return parsed.data;
+  const base = z.array(candidateBaseSummary).safeParse(data);
+  if (!base.success) throw new Error('The workspace data is not in the expected format. Contact an administrator.');
+  const variantIds = base.data.flatMap((candidate) =>
+    candidate.supplier_products.supplier_variants.map((variant) => variant.id));
+  let quotes: z.infer<typeof shippingQuoteSummary>[] = [];
+  if (variantIds.length) {
+    const quoteResult = await client.from('supplier_shipping_quotes')
+      .select(`supplier_variant_id,destination_country_code,origin_country_code,quantity,
+        available,shipping_method,cost,currency,delivery_days_min,delivery_days_max,quoted_at`)
+      .in('supplier_variant_id', variantIds);
+    if (quoteResult.error && !['42P01', 'PGRST205'].includes(quoteResult.error.code)) {
+      throw new Error('Shipping quotes could not be loaded. Please try again.');
+    }
+    if (!quoteResult.error) {
+      const parsedQuotes = z.array(shippingQuoteSummary).safeParse(quoteResult.data);
+      if (!parsedQuotes.success) throw new Error('Shipping quote data is not in the expected format.');
+      quotes = parsedQuotes.data;
+    }
+  }
+  const byVariant = new Map<string, z.infer<typeof shippingQuoteSummary>[]>();
+  for (const quote of quotes) {
+    const current = byVariant.get(quote.supplier_variant_id) ?? [];
+    current.push(quote);
+    byVariant.set(quote.supplier_variant_id, current);
+  }
+  const enriched = base.data.map((candidate) => ({
+    ...candidate,
+    supplier_products: {
+      ...candidate.supplier_products,
+      supplier_variants: candidate.supplier_products.supplier_variants.map((variant) => ({
+        ...variant,
+        shipping_quotes: byVariant.get(variant.id) ?? [],
+      })),
+    },
+  }));
+  return z.array(candidateSummary).parse(enriched);
 }
 
 /** V2 discovery results are optional during the additive schema rollout. */

@@ -115,6 +115,14 @@ function variantOptions(names: string[], rawKey: string | null) {
 
 const wait = () => new Promise((resolve) => setTimeout(resolve, 1_100))
 
+function publicError(error: unknown) {
+  const code = error instanceof Error ? error.message : 'import_failed'
+  return new Set([
+    'provider_authentication', 'provider_unavailable', 'invalid_provider_payload',
+    'persistence_failed',
+  ]).has(code) ? code : 'import_failed'
+}
+
 export default {
   fetch: withSupabase({ auth: 'user' }, async (req, ctx) => {
     if (req.method !== 'POST') {
@@ -230,8 +238,10 @@ export default {
         candidateId: string(row.candidate_id),
         variantCount: number(row.variant_count),
       })
-    } catch {
-      return Response.json({ error: 'import_failed' }, { status: 503 })
+    } catch (error) {
+      const code = publicError(error)
+      console.error('import-cj-product failed', { code, discoveryCandidateId })
+      return Response.json({ error: code }, { status: 503 })
     }
   }),
 }

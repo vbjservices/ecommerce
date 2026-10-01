@@ -161,6 +161,61 @@ test('trusted supplier ingestion is atomic, idempotent, and retains raw history'
       },
     ]);
 
+    const quotedVariant = await db.query<{ id: string }>(
+      `select id from public.supplier_variants
+       where external_variant_id = '2506170616321605300'`,
+    );
+    const quoteSql = `select public.upsert_supplier_shipping_quotes(
+      $1::uuid, $2::timestamptz, $3, $4::jsonb, $5::jsonb
+    ) as saved`;
+    const quotePayload = JSON.stringify([
+      {
+        destination_country_code: 'NL', origin_country_code: 'CN', quantity: 1,
+        available: true, shipping_method: 'CJPacket', cost: '4.25', currency: 'USD',
+        delivery_days_min: 7, delivery_days_max: 12,
+      },
+      {
+        destination_country_code: 'BE', origin_country_code: 'CN', quantity: 1,
+        available: false, shipping_method: null, cost: null, currency: null,
+        delivery_days_min: null, delivery_days_max: null,
+      },
+    ]);
+    await db.exec('begin');
+    try {
+      await db.exec('set local role authenticated');
+      await assert.rejects(db.query(quoteSql, [
+        quotedVariant.rows[0]!.id, '2026-09-29T11:30:00Z', 'cj-freight',
+        quotePayload, JSON.stringify({ request: 'private' }),
+      ]), /permission denied/);
+    } finally {
+      await db.exec('rollback');
+    }
+    await db.exec('begin');
+    try {
+      await db.exec('set local role service_role');
+      const saved = await db.query<{ saved: number }>(quoteSql, [
+        quotedVariant.rows[0]!.id, '2026-09-29T11:30:00Z', 'cj-freight',
+        quotePayload, JSON.stringify({ request: 'private' }),
+      ]);
+      assert.equal(saved.rows[0]!.saved, 2);
+      await db.exec('commit');
+    } catch (error) {
+      await db.exec('rollback');
+      throw error;
+    }
+    const shippingQuotes = await db.query<{
+      destination_country_code: string; available: boolean; cost: string | null;
+    }>(`select destination_country_code,available,cost::text
+        from public.supplier_shipping_quotes order by destination_country_code desc`);
+    assert.deepEqual(shippingQuotes.rows, [
+      { destination_country_code: 'NL', available: true, cost: '4.250000' },
+      { destination_country_code: 'BE', available: false, cost: null },
+    ]);
+    const shippingSnapshots = await db.query<{ count: number }>(
+      'select count(*)::int as count from private.supplier_shipping_snapshots',
+    );
+    assert.equal(shippingSnapshots.rows[0]!.count, 1);
+
     const duplicate = [initialVariants[0], initialVariants[0]];
     await assert.rejects(
       ingest(db, 'service_role', '2026-09-29T12:00:00Z', duplicate),

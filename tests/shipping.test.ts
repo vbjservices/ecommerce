@@ -25,5 +25,9 @@ test('shipping labels distinguish unknown, worldwide, regional, limited, and una
 
 test('Europe is the explicit initial shipping market', () => {
   assert.equal(INITIAL_SHIPPING_MARKET.id, 'europe');
+  assert.deepEqual(
+    INITIAL_SHIPPING_MARKET.destinations.map((destination) => destination.code),
+    ['NL', 'BE', 'DE', 'FR', 'ES', 'IT'],
+  );
   assert.equal(shippingMarketStatusLabel(NOT_CHECKED_SHIPPING), 'Europe · Not checked');
 });

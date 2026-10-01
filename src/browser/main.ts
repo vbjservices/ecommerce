@@ -4,7 +4,11 @@ import { createBrowserDatabase } from './supabase';
 import { checkAccess } from './auth';
 import { readRecentCandidates, readRecentDiscoveryCandidates } from './workspace-repository';
 import { isWorkspaceSnapshotFresh, type WorkspaceSnapshot } from './workspace-cache';
-import { NOT_CHECKED_SHIPPING, shippingMarketStatusLabel } from '../domain/shipping';
+import {
+  INITIAL_SHIPPING_MARKET,
+  NOT_CHECKED_SHIPPING,
+  shippingMarketStatusLabel,
+} from '../domain/shipping';
 
 const app = document.querySelector<HTMLElement>('#app')!;
 const carouselTimers = new Set<number>();
@@ -111,6 +115,90 @@ async function start() {
     return known.length
       ? new Intl.NumberFormat().format(known.reduce((total, stock) => total + stock, 0))
       : 'Unknown';
+  }
+
+  function productShippingQuotes(candidate: WorkspaceSnapshot['candidates'][number]) {
+    const targetCodes = new Set(INITIAL_SHIPPING_MARKET.destinations.map((destination) => destination.code));
+    return candidate.supplier_products.supplier_variants
+      .flatMap((variant) => variant.shipping_quotes)
+      .filter((quote) => targetCodes.has(
+        quote.destination_country_code as typeof INITIAL_SHIPPING_MARKET.destinations[number]['code'],
+      ));
+  }
+
+  function shippingOverview(candidate: WorkspaceSnapshot['candidates'][number]) {
+    const quotes = productShippingQuotes(candidate);
+    if (!quotes.length) return {
+      status: shippingMarketStatusLabel(NOT_CHECKED_SHIPPING),
+      cost: 'Not checked',
+    };
+    const available = quotes.filter((quote) => quote.available);
+    const coverage = `${available.length}/${INITIAL_SHIPPING_MARKET.destinations.length} destinations`;
+    const priced = available.filter(
+      (quote): quote is typeof quote & { cost: number | string; currency: string } =>
+        quote.cost !== null && quote.currency !== null,
+    );
+    const currencies = new Set(priced.map((quote) => quote.currency));
+    if (!priced.length || currencies.size !== 1) return { status: `Europe · ${coverage}`, cost: 'Unavailable' };
+    const values = priced.map((quote) => Number(quote.cost));
+    if (values.some((value) => !Number.isFinite(value))) return { status: `Europe · ${coverage}`, cost: 'Unknown' };
+    const formatter = new Intl.NumberFormat(undefined, { style: 'currency', currency: priced[0]!.currency });
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    return {
+      status: `Europe · ${coverage}`,
+      cost: min === max ? formatter.format(min) : `${formatter.format(min)} – ${formatter.format(max)}`,
+    };
+  }
+
+  function shippingQuoteDetails(candidate: WorkspaceSnapshot['candidates'][number]) {
+    const quotes = productShippingQuotes(candidate);
+    if (!quotes.length) return null;
+    const byCountry = new Map(quotes.map((quote) => [quote.destination_country_code, quote]));
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.textContent = 'Europe shipping by country';
+    const list = document.createElement('ul');
+    for (const destination of INITIAL_SHIPPING_MARKET.destinations) {
+      const quote = byCountry.get(destination.code);
+      const item = document.createElement('li');
+      if (!quote?.available || quote.cost === null || !quote.currency) {
+        item.textContent = `${destination.label}: unavailable`;
+      } else {
+        const cost = new Intl.NumberFormat(undefined, {
+          style: 'currency', currency: quote.currency,
+        }).format(Number(quote.cost));
+        const delivery = quote.delivery_days_min === null || quote.delivery_days_max === null
+          ? ''
+          : quote.delivery_days_min === quote.delivery_days_max
+            ? ` · ${quote.delivery_days_min} days`
+            : ` · ${quote.delivery_days_min}–${quote.delivery_days_max} days`;
+        item.textContent = `${destination.label}: ${cost} · ${quote.shipping_method ?? 'Method unknown'}${delivery}`;
+      }
+      list.append(item);
+    }
+    details.append(summary, list);
+    return details;
+  }
+
+  async function functionErrorMessage(error: unknown, fallback: string) {
+    const context = error && typeof error === 'object' && 'context' in error
+      ? (error as { context?: unknown }).context
+      : null;
+    let code: string | null = null;
+    if (context instanceof Response) {
+      const payload = await context.clone().json().catch(() => null) as { error?: unknown } | null;
+      code = typeof payload?.error === 'string' ? payload.error : null;
+    }
+    return ({
+      integration_not_configured: 'The CJ Edge secret is not configured.',
+      provider_authentication: 'CJ rejected the configured API key.',
+      provider_unavailable: 'CJ is temporarily unavailable. Try again shortly.',
+      candidate_not_found: 'This product is no longer available to this workspace.',
+      invalid_provider_payload: 'CJ returned product data that could not be safely imported.',
+      persistence_failed: 'Supabase could not save the result. Check that all migrations ran.',
+      quote_failed: 'The shipping estimate could not be completed.',
+    } as Record<string, string>)[code ?? ''] ?? fallback;
   }
 
   function discoveryCost(candidate: WorkspaceSnapshot['discoveryCandidates'][number]) {
@@ -343,7 +431,10 @@ async function start() {
         if (result.error) {
           importButton.disabled = false;
           importButton.textContent = 'Try import again';
-          importStatus.textContent = 'Import failed. Check the function deployment and try again.';
+          importStatus.textContent = await functionErrorMessage(
+            result.error,
+            'Import failed. Check the function deployment and try again.',
+          );
           return;
         }
         importButton.textContent = 'Imported';
@@ -379,7 +470,7 @@ async function start() {
       <div class="discovery-candidates"></div></section>
       <section class="panel" role="tabpanel" aria-labelledby="imported-tab" data-panel="imported"><div class="section-heading"><h2>Imported products</h2><span class="badge">Supabase store</span></div>
       <div class="candidates"></div></section><p class="footnote refresh-status" role="status"></p>
-      <p class="footnote">Costs and stock are supplier snapshots. Shipping, market demand, and margin still need enrichment before review.</p></section>`;
+      <p class="footnote">Costs, stock, and shipping are timestamped supplier estimates. Market demand and margin still need review.</p></section>`;
     app.querySelector('.account')!.textContent = `Signed in as ${access.email}`;
     app.querySelector('.refresh-status')!.textContent = status;
     action('Refresh', () => { void refresh({ force: true, background: true }); });
@@ -440,6 +531,7 @@ async function start() {
         status.textContent = candidate.status.replaceAll('_', ' ');
         heading.append(identity, status);
 
+        const shipping = shippingOverview(candidate);
         const facts = document.createElement('dl');
         facts.className = 'candidate-facts';
         facts.append(
@@ -449,11 +541,45 @@ async function start() {
           metric('Last checked', new Intl.DateTimeFormat(undefined, {
             dateStyle: 'medium', timeStyle: 'short',
           }).format(new Date(candidate.supplier_products.last_seen_at))),
-          metric('Shipping', shippingMarketStatusLabel(NOT_CHECKED_SHIPPING)),
+          metric('Shipping', shipping.status),
+          metric('Est. shipping · 1 unit', shipping.cost),
         );
 
         const sourceUrl = safeSourceUrl(candidate.supplier_products.source_url);
         body.append(heading, facts);
+        const quoteDetails = shippingQuoteDetails(candidate);
+        if (quoteDetails) body.append(quoteDetails);
+        const cardActions = document.createElement('div');
+        cardActions.className = 'card-actions';
+        const quoteButton = document.createElement('button');
+        quoteButton.type = 'button';
+        quoteButton.textContent = productShippingQuotes(candidate).length
+          ? 'Refresh Europe shipping'
+          : 'Check Europe shipping';
+        const quoteStatus = document.createElement('span');
+        quoteStatus.className = 'import-status';
+        quoteStatus.setAttribute('role', 'status');
+        quoteButton.addEventListener('click', async () => {
+          quoteButton.disabled = true;
+          quoteButton.textContent = 'Checking shipping…';
+          quoteStatus.textContent = 'Checking six destinations. This can take several seconds.';
+          const result = await client.functions.invoke('quote-cj-shipping', {
+            body: { candidateId: candidate.id },
+          });
+          if (result.error) {
+            quoteButton.disabled = false;
+            quoteButton.textContent = 'Try shipping again';
+            quoteStatus.textContent = await functionErrorMessage(
+              result.error,
+              'Shipping check failed. Confirm the migration and function deployment.',
+            );
+            return;
+          }
+          quoteButton.textContent = 'Shipping checked';
+          quoteStatus.textContent = 'Europe shipping estimates saved.';
+          await refresh({ force: true, background: true });
+        });
+        cardActions.append(quoteButton, quoteStatus);
         if (sourceUrl) {
           const link = document.createElement('a');
           link.className = 'source-link';
@@ -461,8 +587,9 @@ async function start() {
           link.target = '_blank';
           link.rel = 'noopener noreferrer';
           link.textContent = 'View supplier product \u2197';
-          body.append(link);
+          cardActions.append(link);
         }
+        body.append(cardActions);
         li.append(media, body);
         ul.append(li);
       }

@@ -91,7 +91,7 @@ npm run cj:import -- 1561984433618694144
 npm run cj:discover -- "cat toy" --profile=pets
 ```
 
-`cj:search` is the legacy read-only preview and does not persist results. `cj:discover` executes the budgeted V2 pipeline and atomically persists its run, query plan, ranked candidates, occurrences, normalized observations, shortlist image galleries, and private raw pages. Apply `20260930000200_discovery_runs.sql` and `20260930000300_product_image_galleries.sql` before using it. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product, image gallery, and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
+`cj:search` is the legacy read-only preview and does not persist results. `cj:discover` executes the budgeted V2 pipeline and atomically persists its run, query plan, ranked candidates, occurrences, normalized observations, shortlist image galleries, and private raw pages. Apply `20260930000200_discovery_runs.sql`, `20260930000300_product_image_galleries.sql`, and `20261001000100_supplier_shipping_quotes.sql` before using every dashboard feature. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product, image gallery, and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
 
 The image-gallery migration is safe to retry in the SQL Editor. This matters when an earlier attempt created `private.normalize_image_urls` and then stopped: use the current complete file and run it again rather than deleting the existing helper function.
 
@@ -103,9 +103,12 @@ Deploy the committed function from the linked project:
 
 ```sh
 npx --yes supabase@2.117.0 functions deploy import-cj-product --use-api
+npx --yes supabase@2.117.0 functions deploy quote-cj-shipping --use-api
 ```
 
 Keep JWT verification enabled. The function checks the signed-in user against `private.internal_users` through `is_internal_user()` before reading a discovery candidate or invoking privileged ingestion. Test by importing one Discovery card and confirming that it changes to **Imported** and appears in the Imported products tab.
+
+On an imported card, **Check Europe shipping** retrieves one-unit estimates for a representative in-stock variant to the Netherlands, Belgium, Germany, France, Spain, and Italy. The dashboard shows the range plus a country-by-country carrier and delivery estimate. Quotes replace the current normalized value while raw CJ responses remain private history. Recheck before approval because freight prices and routes change.
 
 ## 6. Prepare the Shopify channel
 

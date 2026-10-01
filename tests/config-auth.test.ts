@@ -83,10 +83,26 @@ test('repository does not convert failed or malformed reads into a valid empty w
       source_url: 'https://example.com/product',
       last_seen_at: '2026-09-29T10:00:00Z',
       suppliers: { name: 'Supplier' },
-      supplier_variants: [{ cost: 3.16, currency: 'USD', stock: 10 }],
+      supplier_variants: [{
+        id: '00000000-0000-4000-8000-000000000011',
+        cost: 3.16, currency: 'USD', stock: 10,
+      }],
     },
   };
-  assert.deepEqual(await readRecentCandidates(client([row], null)), [row]);
+  const rowClient = {
+    from: (table: string) => table === 'product_candidates'
+      ? { select: () => ({ order: () => ({ limit: async () => ({ data: [row], error: null }) }) }) }
+      : { select: () => ({ in: async () => ({ data: [], error: null }) }) },
+  } as unknown as SupabaseClient;
+  assert.deepEqual(await readRecentCandidates(rowClient), [{
+    ...row,
+    supplier_products: {
+      ...row.supplier_products,
+      supplier_variants: row.supplier_products.supplier_variants.map((variant) => ({
+        ...variant, shipping_quotes: [],
+      })),
+    },
+  }]);
 });
 
 test('repository stays readable during the additive product image migration', async () => {

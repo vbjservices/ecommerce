@@ -16,6 +16,14 @@ export interface ShippingAvailability {
 export const INITIAL_SHIPPING_MARKET = {
   id: 'europe',
   label: 'Europe',
+  destinations: [
+    { code: 'NL', label: 'Netherlands' },
+    { code: 'BE', label: 'Belgium' },
+    { code: 'DE', label: 'Germany' },
+    { code: 'FR', label: 'France' },
+    { code: 'ES', label: 'Spain' },
+    { code: 'IT', label: 'Italy' },
+  ],
 } as const;
 
 export const NOT_CHECKED_SHIPPING: ShippingAvailability = {

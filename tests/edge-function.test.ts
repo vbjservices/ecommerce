@@ -25,3 +25,24 @@ test('one-click import edge function parses and keeps privileged work behind use
   const config = await readFile('supabase/config.toml', 'utf8');
   assert.match(config, /\[functions\.import-cj-product\][\s\S]*verify_jwt = true/);
 });
+
+test('Europe shipping edge function quotes fixed destinations behind the same authorization boundary', async () => {
+  const source = await readFile('supabase/functions/quote-cj-shipping/index.ts', 'utf8');
+  await transform(source, {
+    loader: 'ts', format: 'esm', target: 'es2022',
+    sourcefile: 'supabase/functions/quote-cj-shipping/index.ts',
+  });
+  assert.match(source, /withSupabase\(\{ auth: 'user' \}/);
+  assert.ok(source.indexOf("rpc('is_internal_user')") <
+    source.indexOf("ctx.supabaseAdmin.rpc('upsert_supplier_shipping_quotes'"));
+  assert.match(source, /\['NL', 'BE', 'DE', 'FR', 'ES', 'IT'\]/);
+  assert.match(source, /\/logistic\/freightCalculate/);
+  assert.match(source, /Deno\.env\.get\('CJ_API_KEY'\)/);
+
+  const browser = await readFile('src/browser/main.ts', 'utf8');
+  assert.match(browser, /functions\.invoke\('quote-cj-shipping'/);
+  assert.doesNotMatch(browser, /CJ_API_KEY|SUPABASE_SERVICE_ROLE_KEY/);
+
+  const config = await readFile('supabase/config.toml', 'utf8');
+  assert.match(config, /\[functions\.quote-cj-shipping\][\s\S]*verify_jwt = true/);
+});
