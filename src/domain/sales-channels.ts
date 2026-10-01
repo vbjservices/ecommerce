@@ -1,7 +1,12 @@
 import type { Id, Timestamp } from './shared';
 
 /** A configured channel connection/store, separate from its adapter provider. */
-export interface SalesChannel { id: Id; provider: string; name: string }
+export interface SalesChannel {
+  id: Id;
+  provider: string;
+  name: string;
+  externalAccountId?: string | null;
+}
 export interface ChannelListing {
   salesChannelId: Id;
   productId: Id;

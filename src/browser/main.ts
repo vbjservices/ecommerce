@@ -228,6 +228,18 @@ async function start() {
       review_cost_missing: 'Every selected variant needs a current supplier cost before approval.',
       review_shipping_evidence_missing: 'Every selected market needs a confirmed shipping quote before approval.',
       review_rejection_note_required: 'Add a review note explaining why the product is rejected.',
+      shopify_not_configured: 'Shopify is not configured in Supabase Edge Function Secrets.',
+      listing_candidate_not_approved: 'Approve the current product review before creating a Shopify draft.',
+      listing_review_missing: 'Save and approve a product review before creating a Shopify draft.',
+      listing_review_incomplete: 'The approved review no longer has a complete priced variant selection.',
+      listing_in_progress: 'A Shopify draft request is already running. Refresh again shortly.',
+      shopify_authentication_failed: 'Shopify rejected the configured app credentials.',
+      shopify_product_rejected: 'Shopify rejected the draft data. Check the function logs for its private response.',
+      shopify_response_invalid: 'Shopify returned an incomplete draft response. Try again shortly.',
+      shopify_variant_mapping_missing: 'Shopify created the draft but did not return every variant mapping. Retry to reconcile it.',
+      shopify_unavailable: 'Shopify is temporarily unavailable. Try again shortly.',
+      listing_reconciliation_failed: 'The Shopify draft was created, but Supabase could not reconcile it. Retrying is safe.',
+      listing_persistence_failed: 'Supabase could not prepare the Shopify draft. Confirm the listing migration ran.',
     } as Record<string, string>)[code ?? ''] ?? fallback;
   }
 
@@ -405,6 +417,94 @@ async function start() {
     } catch {
       return `${value} ${currency}`;
     }
+  }
+
+  function shopifyListingPanel(candidate: WorkspaceSnapshot['candidates'][number]) {
+    const listing = candidate.listings.find((item) => item.sales_channels.provider === 'shopify');
+    const section = document.createElement('section');
+    section.className = 'channel-listing-panel';
+    if (candidate.status !== 'approved' && !listing) {
+      section.hidden = true;
+      return section;
+    }
+
+    const heading = document.createElement('div');
+    heading.className = 'channel-listing-heading';
+    const title = document.createElement('h3');
+    title.textContent = 'Shopify draft';
+    const badge = document.createElement('span');
+    badge.className = `badge listing-${listing?.status ?? 'ready'}`;
+    badge.textContent = listing?.status ?? 'ready';
+    heading.append(title, badge);
+
+    const detail = document.createElement('p');
+    detail.className = 'channel-listing-detail';
+    const stale = Boolean(listing && candidate.review &&
+      Date.parse(candidate.review.updated_at) > Date.parse(listing.source_review_updated_at));
+    if (!listing) {
+      detail.textContent = 'The approved review is ready to create as an unpublished Shopify product.';
+    } else if (listing.status === 'draft') {
+      const count = listing.channel_listing_variants.length;
+      detail.textContent = stale
+        ? 'The review changed after the last Shopify sync. Update the draft before using it.'
+        : `Unpublished draft saved with ${count} explicit variant mapping${count === 1 ? '' : 's'}${listing.synced_at ? ` · synced ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(listing.synced_at))}` : ''}.`;
+    } else if (listing.status === 'failed') {
+      detail.textContent = 'The last Shopify attempt failed without publishing the product. Retrying uses the same product identity.';
+    } else if (listing.status === 'syncing' || listing.status === 'pending') {
+      detail.textContent = 'The Shopify draft request is being processed.';
+    } else {
+      detail.textContent = `The recorded Shopify listing is ${listing.status}.`;
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'channel-listing-actions';
+    const status = document.createElement('span');
+    status.className = 'review-status';
+    status.setAttribute('role', 'status');
+    if (candidate.status === 'approved' && listing?.status !== 'active' && listing?.status !== 'archived') {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = listing?.status === 'draft'
+        ? stale ? 'Update Shopify draft' : 'Resync Shopify draft'
+        : listing?.status === 'failed' ? 'Try Shopify draft again' : 'Create Shopify draft';
+      if (listing?.status === 'syncing' || listing?.status === 'pending') {
+        button.disabled = true;
+        button.textContent = 'Creating Shopify draft…';
+      }
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        button.textContent = listing ? 'Updating Shopify draft…' : 'Creating Shopify draft…';
+        status.textContent = 'Sending approved content and selected variants to Shopify…';
+        const result = await client.functions.invoke('publish-shopify-draft', {
+          body: { candidateId: candidate.id },
+        });
+        if (result.error) {
+          button.disabled = false;
+          button.textContent = listing ? 'Try Shopify draft again' : 'Create Shopify draft';
+          status.textContent = await functionErrorMessage(
+            result.error, 'The Shopify draft could not be created. Confirm the function deployment and secrets.',
+          );
+          return;
+        }
+        status.textContent = 'Unpublished Shopify draft saved.';
+        await refresh({ force: true, background: true });
+      });
+      actions.append(button);
+    }
+    const store = listing?.sales_channels.external_account_id;
+    const numericProductId = listing?.external_listing_id?.match(/^gid:\/\/shopify\/Product\/(\d+)$/)?.[1];
+    if (store && numericProductId && /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(store)) {
+      const link = document.createElement('a');
+      link.className = 'source-link';
+      link.href = `https://${store}/admin/products/${numericProductId}`;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Open Shopify draft ↗';
+      actions.append(link);
+    }
+    actions.append(status);
+    section.append(heading, detail, actions);
+    return section;
   }
 
   function reviewEditor(candidate: WorkspaceSnapshot['candidates'][number]) {
@@ -956,7 +1056,7 @@ async function start() {
         body.append(heading, facts);
         const quoteDetails = shippingQuoteDetails(productQuotes);
         if (quoteDetails) body.append(quoteDetails);
-        body.append(reviewEditor(candidate));
+        body.append(reviewEditor(candidate), shopifyListingPanel(candidate));
         const cardActions = document.createElement('div');
         cardActions.className = 'card-actions';
         const shippingControls = shippingScanControls({ candidateId: candidate.id }, productQuotes.length);

@@ -35,6 +35,10 @@ async function migrate(db: PGlite) {
     'supabase/migrations/20261001000200_product_reviews.sql',
     'utf8',
   ));
+  await db.exec(await readFile(
+    'supabase/migrations/20261001000300_shopify_draft_listings.sql',
+    'utf8',
+  ));
 }
 
 async function ingest(
@@ -337,6 +341,86 @@ test('trusted supplier ingestion is atomic, idempotent, and retains raw history'
     assert.deepEqual(reviewState.rows, [{
       status: 'approved', title: 'Reviewed Catnip Balls', events: 1, variants: 1,
     }]);
+
+    const beginListingSql = `select * from public.begin_shopify_draft_listing(
+      $1::uuid,'example-store.myshopify.com',$2::uuid
+    )`;
+    await db.exec('begin');
+    try {
+      await db.exec('set local role authenticated');
+      await assert.rejects(
+        db.query(beginListingSql, [first.candidate_id, reviewer]),
+        /permission denied/,
+      );
+    } finally {
+      await db.exec('rollback');
+    }
+    const begun = await db.query<{
+      listing_id: string; attempt_id: string; external_listing_id: string | null;
+      external_handle: string; source_payload: { variants: unknown[] };
+    }>(beginListingSql, [first.candidate_id, reviewer]);
+    assert.equal(begun.rows[0]!.external_listing_id, null);
+    assert.match(begun.rows[0]!.external_handle, /^ecommerce-[a-f0-9]+$/);
+    assert.equal(begun.rows[0]!.source_payload.variants.length, 1);
+    await assert.rejects(
+      db.query(beginListingSql, [first.candidate_id, reviewer]),
+      /listing_in_progress/,
+    );
+
+    const mapping = JSON.stringify([{
+      product_variant_id: refreshedVariants[1]!.external_variant_id === '2506170616321605300'
+        ? (await db.query<{ id: string }>(
+            `select product_variant_id as id from public.supplier_variants where id = $1::uuid`,
+            [quotedVariant.rows[0]!.id],
+          )).rows[0]!.id
+        : '',
+      external_variant_id: 'gid://shopify/ProductVariant/9001',
+    }]);
+    await db.query(`select public.complete_shopify_draft_listing(
+      $1::uuid,$2::uuid,'gid://shopify/Product/8001',$3::jsonb,$4::jsonb,$5::uuid
+    )`, [
+      begun.rows[0]!.listing_id, begun.rows[0]!.attempt_id, mapping,
+      JSON.stringify({ product: { id: 'gid://shopify/Product/8001', status: 'DRAFT' } }),
+      reviewer,
+    ]);
+    const listingState = await db.query<{
+      status: string; external_listing_id: string; variants: number; attempts: number;
+    }>(`
+      select listing.status,listing.external_listing_id,
+        (select count(*)::int from public.channel_listing_variants
+          where channel_listing_id = listing.id) as variants,
+        (select count(*)::int from private.channel_listing_attempts
+          where channel_listing_id = listing.id and status = 'succeeded') as attempts
+      from public.channel_listings as listing
+      where listing.id = $1::uuid
+    `, [begun.rows[0]!.listing_id]);
+    assert.deepEqual(listingState.rows, [{
+      status: 'draft', external_listing_id: 'gid://shopify/Product/8001', variants: 1, attempts: 1,
+    }]);
+
+    const retry = await db.query<{
+      listing_id: string; attempt_id: string; external_listing_id: string | null;
+      source_payload: { variants: Array<{ existingExternalVariantId: string | null }> };
+    }>(beginListingSql, [first.candidate_id, reviewer]);
+    assert.equal(retry.rows[0]!.listing_id, begun.rows[0]!.listing_id);
+    assert.equal(retry.rows[0]!.external_listing_id, 'gid://shopify/Product/8001');
+    assert.equal(
+      retry.rows[0]!.source_payload.variants[0]!.existingExternalVariantId,
+      'gid://shopify/ProductVariant/9001',
+    );
+    await db.query(`select public.fail_shopify_draft_listing(
+      $1::uuid,$2::uuid,'shopify_unavailable',$3::jsonb,$4::uuid
+    )`, [
+      retry.rows[0]!.listing_id, retry.rows[0]!.attempt_id,
+      JSON.stringify({ httpStatus: 503 }), reviewer,
+    ]);
+    const failedListing = await db.query<{ status: string; last_error_code: string }>(`
+      select status,last_error_code from public.channel_listings where id = $1::uuid
+    `, [retry.rows[0]!.listing_id]);
+    assert.deepEqual(failedListing.rows, [{
+      status: 'failed', last_error_code: 'shopify_unavailable',
+    }]);
+
     await db.exec('begin');
     try {
       await db.exec('set local role service_role');

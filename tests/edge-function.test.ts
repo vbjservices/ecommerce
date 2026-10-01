@@ -77,3 +77,30 @@ test('product review edge function keeps approval behind verified identity and m
   const config = await readFile('supabase/config.toml', 'utf8');
   assert.match(config, /\[functions\.review-product\][\s\S]*verify_jwt = true/);
 });
+
+test('Shopify draft function records intent, keeps credentials server-side, and reconciles mappings', async () => {
+  const source = await readFile('supabase/functions/publish-shopify-draft/index.ts', 'utf8');
+  await transform(source, {
+    loader: 'ts', format: 'esm', target: 'es2022',
+    sourcefile: 'supabase/functions/publish-shopify-draft/index.ts',
+  });
+  assert.match(source, /withSupabase\(\{ auth: 'user' \}/);
+  const membership = source.indexOf("rpc('is_internal_user')");
+  const intent = source.indexOf("rpc('begin_shopify_draft_listing'");
+  const provider = source.indexOf('syncDraft(store');
+  const reconciliation = source.indexOf("rpc('complete_shopify_draft_listing'");
+  assert.ok(membership > 0);
+  assert.ok(intent > membership);
+  assert.ok(provider > intent);
+  assert.ok(reconciliation > provider);
+  assert.match(source, /Deno\.env\.get\('SHOPIFY_CLIENT_SECRET'\)/);
+  assert.match(source, /status: 'draft'/);
+
+  const browser = await readFile('src/browser/main.ts', 'utf8');
+  assert.match(browser, /functions\.invoke\('publish-shopify-draft'/);
+  assert.match(browser, /body: \{ candidateId: candidate\.id \}/);
+  assert.doesNotMatch(browser, /SHOPIFY_CLIENT_SECRET|SHOPIFY_CLIENT_ID/);
+
+  const config = await readFile('supabase/config.toml', 'utf8');
+  assert.match(config, /\[functions\.publish-shopify-draft\][\s\S]*verify_jwt = true/);
+});

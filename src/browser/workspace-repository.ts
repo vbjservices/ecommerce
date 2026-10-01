@@ -73,6 +73,27 @@ const reviewSummary = z.object({
     created_at: z.string(),
   })),
 });
+const channelListingSummary = z.object({
+  id: z.uuid(),
+  candidate_id: z.uuid(),
+  status: z.enum(['pending', 'syncing', 'draft', 'failed', 'active', 'archived', 'unknown']),
+  external_listing_id: z.string().nullable(),
+  external_handle: z.string(),
+  source_review_updated_at: z.string(),
+  attempt_count: z.number().int().nonnegative(),
+  last_error_code: z.string().nullable(),
+  last_attempted_at: z.string().nullable(),
+  synced_at: z.string().nullable(),
+  sales_channels: z.object({
+    provider: z.string(),
+    name: z.string(),
+    external_account_id: z.string().nullable(),
+  }),
+  channel_listing_variants: z.array(z.object({
+    product_variant_id: z.uuid(),
+    external_variant_id: z.string(),
+  })),
+});
 const candidateSummary = candidateBaseSummary.extend({
   supplier_products: candidateBaseSummary.shape.supplier_products.extend({
     supplier_variants: z.array(supplierVariantSummary.extend({
@@ -80,6 +101,7 @@ const candidateSummary = candidateBaseSummary.extend({
     })),
   }),
   review: reviewSummary.nullable(),
+  listings: z.array(channelListingSummary),
 });
 export type CandidateSummary = z.infer<typeof candidateSummary>;
 
@@ -219,6 +241,29 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
     }
   }
   const reviewsByCandidate = new Map(reviews.map((review) => [review.candidate_id, review]));
+  let listings: z.infer<typeof channelListingSummary>[] = [];
+  if (base.data.length) {
+    const listingResult = await client.from('channel_listings')
+      .select(`id,candidate_id,status,external_listing_id,external_handle,source_review_updated_at,
+        attempt_count,last_error_code,last_attempted_at,synced_at,
+        sales_channels!inner(provider,name,external_account_id),
+        channel_listing_variants(product_variant_id,external_variant_id)`)
+      .in('candidate_id', base.data.map((candidate) => candidate.id));
+    if (listingResult.error && !['42P01', '42703', 'PGRST204', 'PGRST205'].includes(listingResult.error.code)) {
+      throw new Error('Channel listings could not be loaded. Please try again.');
+    }
+    if (!listingResult.error) {
+      const parsedListings = z.array(channelListingSummary).safeParse(listingResult.data);
+      if (!parsedListings.success) throw new Error('Channel listing data is not in the expected format.');
+      listings = parsedListings.data;
+    }
+  }
+  const listingsByCandidate = new Map<string, z.infer<typeof channelListingSummary>[]>();
+  for (const listing of listings) {
+    const current = listingsByCandidate.get(listing.candidate_id) ?? [];
+    current.push(listing);
+    listingsByCandidate.set(listing.candidate_id, current);
+  }
   const enriched = base.data.map((candidate) => ({
     ...candidate,
     supplier_products: {
@@ -229,6 +274,7 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
       })),
     },
     review: reviewsByCandidate.get(candidate.id) ?? null,
+    listings: listingsByCandidate.get(candidate.id) ?? [],
   }));
   return z.array(candidateSummary).parse(enriched);
 }

@@ -35,3 +35,6 @@ verify_jwt = true
 
 [functions.review-product]
 verify_jwt = true
+
+[functions.publish-shopify-draft]
+verify_jwt = true

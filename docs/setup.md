@@ -52,6 +52,9 @@ Copy `.env.example` to the ignored `.env.local`. Set:
 | `SUPABASE_URL` | Same project URL, only needed for trusted server tools |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server secret or legacy service-role key, only for trusted tools |
 | `CJ_API_KEY` | CJ API key, only needed for trusted CJ ingestion and discovery |
+| `SHOPIFY_STORE_DOMAIN` | Permanent `store-name.myshopify.com` domain; used only by the Shopify Edge Function |
+| `SHOPIFY_CLIENT_ID` | Shopify Dev Dashboard app client ID; server-only |
+| `SHOPIFY_CLIENT_SECRET` | Shopify Dev Dashboard app client secret; server-only |
 | `OLLAMA_BASE_URL` | Optional Ollama HTTP(S) origin for query expansion, such as `http://127.0.0.1:11434` |
 | `OLLAMA_MODEL` | Optional local model name; configure together with `OLLAMA_BASE_URL` |
 
@@ -91,7 +94,7 @@ npm run cj:import -- 1561984433618694144
 npm run cj:discover -- "cat toy" --profile=pets
 ```
 
-`cj:search` is the legacy read-only preview and does not persist results. `cj:discover` executes the budgeted V2 pipeline and atomically persists its run, query plan, ranked candidates, occurrences, normalized observations, shortlist image galleries, and private raw pages. Apply `20260930000200_discovery_runs.sql`, `20260930000300_product_image_galleries.sql`, `20261001000100_supplier_shipping_quotes.sql`, and `20261001000200_product_reviews.sql` before using every dashboard feature. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product, image gallery, and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
+`cj:search` is the legacy read-only preview and does not persist results. `cj:discover` executes the budgeted V2 pipeline and atomically persists its run, query plan, ranked candidates, occurrences, normalized observations, shortlist image galleries, and private raw pages. Apply `20260930000200_discovery_runs.sql`, `20260930000300_product_image_galleries.sql`, `20261001000100_supplier_shipping_quotes.sql`, `20261001000200_product_reviews.sql`, and `20261001000300_shopify_draft_listings.sql` before using every dashboard feature. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product, image gallery, and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
 
 The image-gallery, shipping-quote, and product-review migrations are safe to retry in the SQL Editor. This matters when an earlier attempt created a helper function or table and then stopped: use the current complete file and run it again rather than deleting existing objects.
 
@@ -105,6 +108,7 @@ Deploy the committed function from the linked project:
 npx --yes supabase@2.117.0 functions deploy import-cj-product --use-api
 npx --yes supabase@2.117.0 functions deploy quote-cj-shipping --use-api
 npx --yes supabase@2.117.0 functions deploy review-product --use-api
+npx --yes supabase@2.117.0 functions deploy publish-shopify-draft --use-api
 ```
 
 Keep JWT verification enabled. The functions check the signed-in user against `private.internal_users` through `is_internal_user()` before reading a candidate or invoking privileged writes. Test by scanning one Discovery card, importing it, and confirming that it leaves Discovery, appears in Imported products, and retains the checked shipping evidence.
@@ -119,13 +123,31 @@ Open **Product review and pricing** on an imported card. Choose only confirmed E
 
 **Save review** keeps a draft in `ready_for_review`. **Approve for Shopify draft** requires a current supplier cost for every selected variant, confirmed shipping evidence for every selected market, an exchange rate when currencies differ, and at least one priced variant. **Reject product** requires a note. Every action appends an audit event. Approval does not create or publish a Shopify product.
 
-## 6. Prepare the Shopify channel
+## 6. Configure Shopify draft creation
 
-Shopify is the selected first channel. Channel publishing is not active yet, so do not put Shopify credentials in browser variables or GitHub Pages.
+Shopify is the selected first channel. Apply `20261001000300_shopify_draft_listings.sql` before deploying the draft function. The migration adds durable listing intent, explicit product/variant mappings, restricted attempt history, and read-only dashboard status.
 
 Create the app in Shopify's Dev Dashboard, choose custom distribution to your store, request only `write_products` for the first product-publishing slice, release the app version, and install it on the store. Keep the Client secret in a server-side secret store. Record the store's permanent `*.myshopify.com` domain; a custom storefront domain can change and is not the Admin API identity.
 
-The next channel slice will exchange the Client ID and Client secret for a short-lived server token, publish an approved imported product through Shopify's GraphQL Admin API, and persist the Shopify product/variant IDs for idempotent updates. Shopify markets and shipping zones will be limited to destinations that the product's current supplier evidence confirms.
+In **Supabase Dashboard -> Edge Functions -> Secrets**, add:
+
+```text
+SHOPIFY_STORE_DOMAIN=store-name.myshopify.com
+SHOPIFY_CLIENT_ID=...
+SHOPIFY_CLIENT_SECRET=...
+```
+
+Do not add a custom storefront domain, URL scheme, path, or trailing slash. These values can remain empty in local `.env` files because the dashboard calls the deployed Edge Function. Deploy it from the linked project:
+
+```sh
+npx --yes supabase@2.117.0 functions deploy publish-shopify-draft --use-api
+```
+
+Approve a product review, then select **Create Shopify draft** on its imported-product card. The function verifies the signed-in internal user, records the attempt before calling Shopify, exchanges the credentials for a short-lived server token, and sends only the approved title, description, images, selected variants, prices, SKUs, and option data. Shopify receives `DRAFT` status; the function never activates or publishes the product. A successful response persists the Shopify product and every variant ID. Repeating the action updates the same draft and preserves reconciled variant identities.
+
+If Shopify succeeds but Supabase reconciliation fails, retry the same action. The deterministic handle targets the same product. Provider responses and failure detail remain restricted; the browser receives only sanitized status codes.
+
+Shopify markets and shipping zones will next be limited to destinations with current supplier evidence. Market-specific selling prices will use configurable country groups and per-selected-variant shipping quotes rather than the current representative-variant estimate.
 
 ## 7. Publish using the existing Pages setting
 

@@ -62,7 +62,7 @@ Set the Edge Function secret `CJ_API_KEY` and deploy both `import-cj-product` an
 - scheduled or nightly runs;
 - external market-demand, advertising, competitor, or review integrations;
 - automated quote refresh and external market validation beyond the imported-product review estimate;
-- Shopify, bol.com, Etsy, or other publishing;
+- live Shopify publication, Shopify market pricing, bol.com, Etsy, or other channel publishing;
 - product maintenance and replacement workflows;
 - supplier purchasing, fulfillment, orders, or tracking;
 - external orchestrator integration;

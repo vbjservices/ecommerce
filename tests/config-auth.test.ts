@@ -124,6 +124,7 @@ test('repository does not convert failed or malformed reads into a valid empty w
       })),
     },
     review,
+    listings: [],
   }]);
 });
 
@@ -151,7 +152,7 @@ test('repository stays readable during the additive product image migration', as
       : { select: () => ({ in: async () => ({ data: [], error: null }) }) },
   } as unknown as SupabaseClient;
   assert.deepEqual(await readRecentCandidates(client), [{
-    ...row, products: { ...row.products, image_url: null, image_urls: [] }, review: null,
+    ...row, products: { ...row.products, image_url: null, image_urls: [] }, review: null, listings: [],
   }]);
   assert.equal(calls, 3);
 });
