@@ -3,7 +3,38 @@ import { withSupabase } from 'npm:@supabase/server@^1'
 const cjBaseUrl = 'https://developers.cjdropshipping.com/api2.0/v1'
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const productIdPattern = /^[A-Za-z0-9-]{1,200}$/
-const destinations = ['NL', 'BE', 'DE', 'FR', 'ES', 'IT'] as const
+const priorityDestinations = [
+  'NL', 'BE', 'DE', 'FR', 'ES', 'IT', 'GB', 'US', 'CA', 'AU',
+  'NZ', 'IE', 'PT', 'AT', 'CH', 'DK', 'SE', 'NO', 'FI', 'PL',
+  'CZ', 'RO', 'GR', 'HR', 'HU', 'BG', 'JP', 'KR', 'SG', 'AE',
+  'SA', 'BR', 'MX', 'IN', 'ZA',
+] as const
+// CJ's published destination catalog. Some territories may return unavailable for a product.
+const allCjDestinations = [
+  'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AW', 'AX', 'AZ',
+  'BA', 'BB', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BL', 'BM', 'BN', 'BO', 'BQ', 'BR', 'BS',
+  'BT', 'BV', 'BW', 'BY', 'BZ', 'CA', 'CC', 'CF', 'CG', 'CH', 'CI', 'CK', 'CL', 'CM', 'CN', 'CO',
+  'CR', 'CU', 'CV', 'CW', 'CX', 'CY', 'CZ', 'DE', 'DJ', 'DK', 'DM', 'DO', 'DZ', 'EC', 'EE', 'EG',
+  'EH', 'ER', 'ES', 'ET', 'FI', 'FJ', 'FK', 'FM', 'FO', 'FR', 'GA', 'GB', 'GD', 'GE', 'GF', 'GG',
+  'GH', 'GI', 'GL', 'GM', 'GN', 'GP', 'GQ', 'GR', 'GS', 'GT', 'GU', 'GW', 'GY', 'HK', 'HM', 'HN',
+  'HR', 'HT', 'HU', 'ID', 'IE', 'IL', 'IM', 'IN', 'IO', 'IQ', 'IR', 'IS', 'IT', 'JE', 'JM', 'JO',
+  'JP', 'KE', 'KG', 'KH', 'KI', 'KM', 'KN', 'KP', 'KR', 'KW', 'KY', 'KZ', 'LA', 'LB', 'LC', 'LI',
+  'LK', 'LR', 'LS', 'LT', 'LU', 'LV', 'LY', 'MA', 'MC', 'MD', 'ME', 'MF', 'MG', 'MH', 'MK', 'ML',
+  'MM', 'MN', 'MO', 'MP', 'MQ', 'MR', 'MS', 'MT', 'MU', 'MV', 'MW', 'MX', 'MY', 'MZ', 'NA', 'NC',
+  'NE', 'NF', 'NG', 'NI', 'NL', 'NO', 'NP', 'NR', 'NU', 'NZ', 'OM', 'PA', 'PE', 'PF', 'PG', 'PH',
+  'PK', 'PL', 'PM', 'PN', 'PR', 'PS', 'PT', 'PW', 'PY', 'QA', 'RE', 'RO', 'RS', 'RU', 'RW', 'SA',
+  'SB', 'SC', 'SD', 'SE', 'SG', 'SH', 'SI', 'SJ', 'SK', 'SL', 'SM', 'SN', 'SO', 'SR', 'SS', 'ST',
+  'SV', 'SX', 'SY', 'SZ', 'TC', 'TD', 'TF', 'TG', 'TH', 'TJ', 'TK', 'TL', 'TM', 'TN', 'TO', 'TR',
+  'TT', 'TV', 'TW', 'TZ', 'UA', 'UG', 'UM', 'US', 'UY', 'UZ', 'VA', 'VC', 'VE', 'VG', 'VI', 'VN',
+  'VU', 'WF', 'WS', 'YE', 'YK', 'YT', 'ZA', 'ZM', 'ZW',
+] as const
+const worldwideDestinations = [
+  ...priorityDestinations,
+  ...allCjDestinations.filter((code) => !priorityDestinations.includes(
+    code as typeof priorityDestinations[number],
+  )),
+]
+const destinationBatchSize = 20
 let cachedAccessToken: string | null = null
 let cachedAccessTokenExpiresAt = 0
 
@@ -179,6 +210,25 @@ export default {
         !externalVariantId || !productIdPattern.test(externalVariantId)) {
       return Response.json({ error: 'invalid_provider_payload' }, { status: 503 })
     }
+    const existing = await ctx.supabase
+      .from('supplier_shipping_quotes')
+      .select('destination_country_code,quoted_at')
+      .eq('supplier_variant_id', supplierVariantId)
+    if (existing.error) {
+      return Response.json({ error: 'persistence_failed' }, { status: 503 })
+    }
+    const existingRows = Array.isArray(existing.data) ? existing.data.map(object) : []
+    const checkedCodes = new Set(existingRows.map((row) => string(row?.destination_country_code))
+      .filter((code): code is string => code !== null))
+    const unchecked = worldwideDestinations.filter((code) => !checkedCodes.has(code))
+    const destinationsToCheck = unchecked.length
+      ? unchecked.slice(0, destinationBatchSize)
+      : existingRows
+        .sort((left, right) => Date.parse(string(left?.quoted_at) ?? '') -
+          Date.parse(string(right?.quoted_at) ?? ''))
+        .map((row) => string(row?.destination_country_code))
+        .filter((code): code is string => code !== null)
+        .slice(0, destinationBatchSize)
     const apiKey = Deno.env.get('CJ_API_KEY')?.trim()
     if (!apiKey) return Response.json({ error: 'integration_not_configured' }, { status: 503 })
 
@@ -191,7 +241,7 @@ export default {
       const origin = chooseOrigin(inventory, externalVariantId)
       const rawDestinations: Record<string, JsonObject> = {}
       const quotes = []
-      for (const destination of destinations) {
+      for (const destination of destinationsToCheck) {
         await wait()
         const envelope = await providerRequest('/logistic/freightCalculate', token, {
           method: 'POST',
@@ -215,8 +265,13 @@ export default {
       if (saved.error || saved.data !== quotes.length) throw new Error('persistence_failed')
       return Response.json({
         checked: true,
-        availableDestinations: quotes.filter((quote) => quote.available).length,
-        destinations: quotes.length,
+        batchAvailableDestinations: quotes.filter((quote) => quote.available).length,
+        batchDestinations: quotes.length,
+        checkedDestinations: Math.min(
+          worldwideDestinations.length,
+          checkedCodes.size + unchecked.slice(0, destinationBatchSize).length,
+        ),
+        totalDestinations: worldwideDestinations.length,
         quotedAt,
       })
     } catch (error) {

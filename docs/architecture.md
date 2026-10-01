@@ -70,7 +70,7 @@ Discovery V2 now has a provider-neutral application entry point with configurabl
 
 The static dashboard never receives CJ or service-role credentials. Its import action sends only a discovery-candidate UUID with the signed-in user's JWT to `import-cj-product`. That Edge Function rechecks active membership, resolves the supplier product through RLS, calls CJ with its project secret, and enters the existing atomic ingestion boundary. `quote-cj-shipping` applies the same boundary to a product-candidate UUID, chooses a representative in-stock supplier variant, and persists normalized destination estimates while keeping raw freight responses private. A free-shipping catalog flag is not treated as worldwide availability.
 
-Europe is the initial shipping market and Shopify is the first selected sales channel. Scheduling, external market validation, destination shipping quotes, economics, maintenance, channel publishing, fulfillment, and external-orchestrator integration remain separate future layers.
+Shopify is the first selected sales channel. Supplier coverage is tracked independently across CJ's worldwide destination catalog so a future channel can enable only markets with current evidence. Scheduling, external market validation, automated quote refresh, economics, maintenance, channel publishing, fulfillment, and external-orchestrator integration remain separate future layers.
 
 The first read-only discovery/ranking slice and the planned scraping boundaries are documented in [Product discovery and search](discovery.md).
 

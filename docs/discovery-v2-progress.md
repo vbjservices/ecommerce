@@ -47,7 +47,7 @@ npm run cj:discover -- "cat toy" --profile=pets --refresh
 
 The configuration version is now `discovery-v2.1`, so the first command after deployment also bypasses older cached run keys without `--refresh`. Reimport an existing product to refresh its imported-product gallery if its historical raw snapshot did not contain `productImageSet`.
 
-Set the Edge Function secret `CJ_API_KEY` and deploy both `import-cj-product` and `quote-cj-shipping`. Europe is the initial shipping market. Imported products can record current CJ estimates for NL, BE, DE, FR, ES, and IT; discovery results remain `Not checked` until variants are imported.
+Set the Edge Function secret `CJ_API_KEY` and deploy both `import-cj-product` and `quote-cj-shipping`. Imported products progressively record current CJ estimates across the supplier's 249-country catalog; discovery results remain `Not checked` until variants are imported.
 
 ## Next discovery work
 
@@ -61,7 +61,7 @@ Set the Edge Function secret `CJ_API_KEY` and deploy both `import-cj-product` an
 
 - scheduled or nightly runs;
 - external market-demand, advertising, competitor, or review integrations;
-- broader Europe shipping coverage and landed-cost economics;
+- automated quote refresh and landed-cost economics;
 - Shopify, bol.com, Etsy, or other publishing;
 - product maintenance and replacement workflows;
 - supplier purchasing, fulfillment, orders, or tracking;

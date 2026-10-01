@@ -118,12 +118,16 @@ async function start() {
   }
 
   function productShippingQuotes(candidate: WorkspaceSnapshot['candidates'][number]) {
-    const targetCodes = new Set(INITIAL_SHIPPING_MARKET.destinations.map((destination) => destination.code));
-    return candidate.supplier_products.supplier_variants
-      .flatMap((variant) => variant.shipping_quotes)
-      .filter((quote) => targetCodes.has(
-        quote.destination_country_code as typeof INITIAL_SHIPPING_MARKET.destinations[number]['code'],
-      ));
+    return [...candidate.supplier_products.supplier_variants]
+      .sort((left, right) => {
+        if (left.shipping_quotes.length !== right.shipping_quotes.length) {
+          return right.shipping_quotes.length - left.shipping_quotes.length;
+        }
+        const newest = (quotes: typeof left.shipping_quotes) => Math.max(
+          0, ...quotes.map((quote) => Date.parse(quote.quoted_at)).filter(Number.isFinite),
+        );
+        return newest(right.shipping_quotes) - newest(left.shipping_quotes);
+      })[0]?.shipping_quotes ?? [];
   }
 
   function shippingOverview(candidate: WorkspaceSnapshot['candidates'][number]) {
@@ -133,20 +137,23 @@ async function start() {
       cost: 'Not checked',
     };
     const available = quotes.filter((quote) => quote.available);
-    const coverage = `${available.length}/${INITIAL_SHIPPING_MARKET.destinations.length} destinations`;
+    const unchecked = Math.max(0, INITIAL_SHIPPING_MARKET.totalDestinations - quotes.length);
+    const coverage = unchecked
+      ? `${available.length} confirmed · ${unchecked} unchecked`
+      : `${available.length}/${INITIAL_SHIPPING_MARKET.totalDestinations} confirmed`;
     const priced = available.filter(
       (quote): quote is typeof quote & { cost: number | string; currency: string } =>
         quote.cost !== null && quote.currency !== null,
     );
     const currencies = new Set(priced.map((quote) => quote.currency));
-    if (!priced.length || currencies.size !== 1) return { status: `Europe · ${coverage}`, cost: 'Unavailable' };
+    if (!priced.length || currencies.size !== 1) return { status: `Worldwide · ${coverage}`, cost: 'Unavailable' };
     const values = priced.map((quote) => Number(quote.cost));
-    if (values.some((value) => !Number.isFinite(value))) return { status: `Europe · ${coverage}`, cost: 'Unknown' };
+    if (values.some((value) => !Number.isFinite(value))) return { status: `Worldwide · ${coverage}`, cost: 'Unknown' };
     const formatter = new Intl.NumberFormat(undefined, { style: 'currency', currency: priced[0]!.currency });
     const min = Math.min(...values);
     const max = Math.max(...values);
     return {
-      status: `Europe · ${coverage}`,
+      status: `Worldwide · ${coverage}`,
       cost: min === max ? formatter.format(min) : `${formatter.format(min)} – ${formatter.format(max)}`,
     };
   }
@@ -154,16 +161,19 @@ async function start() {
   function shippingQuoteDetails(candidate: WorkspaceSnapshot['candidates'][number]) {
     const quotes = productShippingQuotes(candidate);
     if (!quotes.length) return null;
-    const byCountry = new Map(quotes.map((quote) => [quote.destination_country_code, quote]));
     const details = document.createElement('details');
     const summary = document.createElement('summary');
-    summary.textContent = 'Europe shipping by country';
+    summary.textContent = 'Worldwide shipping by checked country';
+    const coverage = document.createElement('p');
+    coverage.textContent = `${quotes.length} of ${INITIAL_SHIPPING_MARKET.totalDestinations} destinations checked. Unchecked does not mean unavailable.`;
     const list = document.createElement('ul');
-    for (const destination of INITIAL_SHIPPING_MARKET.destinations) {
-      const quote = byCountry.get(destination.code);
+    const names = new Intl.DisplayNames(undefined, { type: 'region' });
+    for (const quote of [...quotes].sort((left, right) =>
+      left.destination_country_code.localeCompare(right.destination_country_code))) {
+      const destination = names.of(quote.destination_country_code) ?? quote.destination_country_code;
       const item = document.createElement('li');
-      if (!quote?.available || quote.cost === null || !quote.currency) {
-        item.textContent = `${destination.label}: unavailable`;
+      if (!quote.available || quote.cost === null || !quote.currency) {
+        item.textContent = `${destination}: unavailable`;
       } else {
         const cost = new Intl.NumberFormat(undefined, {
           style: 'currency', currency: quote.currency,
@@ -173,11 +183,11 @@ async function start() {
           : quote.delivery_days_min === quote.delivery_days_max
             ? ` · ${quote.delivery_days_min} days`
             : ` · ${quote.delivery_days_min}–${quote.delivery_days_max} days`;
-        item.textContent = `${destination.label}: ${cost} · ${quote.shipping_method ?? 'Method unknown'}${delivery}`;
+        item.textContent = `${destination}: ${cost} · ${quote.shipping_method ?? 'Method unknown'}${delivery}`;
       }
       list.append(item);
     }
-    details.append(summary, list);
+    details.append(summary, coverage, list);
     return details;
   }
 
@@ -553,16 +563,19 @@ async function start() {
         cardActions.className = 'card-actions';
         const quoteButton = document.createElement('button');
         quoteButton.type = 'button';
-        quoteButton.textContent = productShippingQuotes(candidate).length
-          ? 'Refresh Europe shipping'
-          : 'Check Europe shipping';
+        const checkedDestinations = productShippingQuotes(candidate).length;
+        quoteButton.textContent = checkedDestinations === 0
+          ? 'Start worldwide shipping scan'
+          : checkedDestinations < INITIAL_SHIPPING_MARKET.totalDestinations
+            ? 'Continue worldwide shipping scan'
+            : 'Refresh worldwide shipping';
         const quoteStatus = document.createElement('span');
         quoteStatus.className = 'import-status';
         quoteStatus.setAttribute('role', 'status');
         quoteButton.addEventListener('click', async () => {
           quoteButton.disabled = true;
           quoteButton.textContent = 'Checking shipping…';
-          quoteStatus.textContent = 'Checking six destinations. This can take several seconds.';
+          quoteStatus.textContent = 'Checking the next 20 destinations. This can take around 30 seconds.';
           const result = await client.functions.invoke('quote-cj-shipping', {
             body: { candidateId: candidate.id },
           });
@@ -576,7 +589,7 @@ async function start() {
             return;
           }
           quoteButton.textContent = 'Shipping checked';
-          quoteStatus.textContent = 'Europe shipping estimates saved.';
+          quoteStatus.textContent = 'Worldwide shipping coverage updated.';
           await refresh({ force: true, background: true });
         });
         cardActions.append(quoteButton, quoteStatus);

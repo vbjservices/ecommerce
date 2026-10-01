@@ -23,11 +23,8 @@ test('shipping labels distinguish unknown, worldwide, regional, limited, and una
   }), 'Unavailable');
 });
 
-test('Europe is the explicit initial shipping market', () => {
-  assert.equal(INITIAL_SHIPPING_MARKET.id, 'europe');
-  assert.deepEqual(
-    INITIAL_SHIPPING_MARKET.destinations.map((destination) => destination.code),
-    ['NL', 'BE', 'DE', 'FR', 'ES', 'IT'],
-  );
-  assert.equal(shippingMarketStatusLabel(NOT_CHECKED_SHIPPING), 'Europe · Not checked');
+test('worldwide coverage is explicit without treating unchecked countries as unavailable', () => {
+  assert.equal(INITIAL_SHIPPING_MARKET.id, 'worldwide');
+  assert.equal(INITIAL_SHIPPING_MARKET.totalDestinations, 249);
+  assert.equal(shippingMarketStatusLabel(NOT_CHECKED_SHIPPING), 'Worldwide · Not checked');
 });

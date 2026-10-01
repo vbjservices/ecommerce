@@ -12,18 +12,11 @@ export interface ShippingAvailability {
   source: string | null;
 }
 
-// The first commercial market. Availability still requires destination-specific quotes.
+// Availability still requires a destination-specific quote for every catalog country.
 export const INITIAL_SHIPPING_MARKET = {
-  id: 'europe',
-  label: 'Europe',
-  destinations: [
-    { code: 'NL', label: 'Netherlands' },
-    { code: 'BE', label: 'Belgium' },
-    { code: 'DE', label: 'Germany' },
-    { code: 'FR', label: 'France' },
-    { code: 'ES', label: 'Spain' },
-    { code: 'IT', label: 'Italy' },
-  ],
+  id: 'worldwide',
+  label: 'Worldwide',
+  totalDestinations: 249,
 } as const;
 
 export const NOT_CHECKED_SHIPPING: ShippingAvailability = {

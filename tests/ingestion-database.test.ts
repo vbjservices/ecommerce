@@ -27,6 +27,10 @@ async function migrate(db: PGlite) {
     'supabase/migrations/20260930000300_product_image_galleries.sql',
     'utf8',
   ));
+  await db.exec(await readFile(
+    'supabase/migrations/20261001000100_supplier_shipping_quotes.sql',
+    'utf8',
+  ));
 }
 
 async function ingest(

@@ -2,7 +2,7 @@
 
 A small internal ecommerce foundation: a static dashboard on GitHub Pages, Supabase PostgreSQL/Auth for persistent state and access, and TypeScript boundaries for future server-side integrations.
 
-CJ is the first supplier integration. Shopify is the selected first sales channel, with Europe as the initial shipping market. Neither defines our products, candidates, or orders.
+CJ is the first supplier integration. Shopify is the selected first sales channel. Supplier shipping coverage is tracked worldwide per product and destination. Neither provider defines our products, candidates, or orders.
 
 ## Run
 
@@ -60,8 +60,8 @@ Tests run migrations in ephemeral PostgreSQL through PGlite with a minimal Supab
 
 ## Scope
 
-Implemented: sign-in/out and session checks, explicit internal membership, five-minute in-memory workspace caching, quiet stale refreshes, a restrictive production Content Security Policy, separate Discovery and Imported products dashboard tabs, hover-only automatic/manual product-image galleries, supplier cost/stock/activity/delivery overviews, authenticated one-click CJ imports, persisted one-unit CJ freight estimates for six initial European destinations, neutral domain/adapter contracts, CJ product/variant/inventory/media reads, atomic idempotent supplier ingestion, and Discovery V2 foundations: configurable niche profiles, original-intent query planning, controlled deterministic expansion, optional Ollama expansion, budgeted multi-strategy pagination and shortlist media enrichment, provenance-preserving deduplication, separate relevance/eligibility/scoring, score/confidence/coverage, durable discovery runs, timestamped supplier observations, private raw snapshots, and an explainable dashboard shortlist.
+Implemented: sign-in/out and session checks, explicit internal membership, five-minute in-memory workspace caching, quiet stale refreshes, a restrictive production Content Security Policy, separate Discovery and Imported products dashboard tabs, hover-only automatic/manual product-image galleries, supplier cost/stock/activity/delivery overviews, authenticated one-click CJ imports, progressive persisted one-unit freight estimates across CJ's 249-country destination catalog, neutral domain/adapter contracts, CJ product/variant/inventory/media reads, atomic idempotent supplier ingestion, and Discovery V2 foundations: configurable niche profiles, original-intent query planning, controlled deterministic expansion, optional Ollama expansion, budgeted multi-strategy pagination and shortlist media enrichment, provenance-preserving deduplication, separate relevance/eligibility/scoring, score/confidence/coverage, durable discovery runs, timestamped supplier observations, private raw snapshots, and an explainable dashboard shortlist.
 
-Deferred: scheduling, external research/scraping adapters, full-Europe shipping coverage, landed-cost economics, approval writes/audit workflow, Shopify listing persistence, order persistence, webhooks, queues, purchasing, fulfillment, maintenance, and tracking. There is no public signup or multi-tenant system.
+Deferred: scheduling, external research/scraping adapters, automated quote refresh, landed-cost economics, approval writes/audit workflow, Shopify listing persistence, order persistence, webhooks, queues, purchasing, fulfillment, maintenance, and tracking. There is no public signup or multi-tenant system.
 
 Next: calibrate Discovery V2 with real runs and operator feedback, add landed-cost review gates, and implement idempotent Shopify publishing.

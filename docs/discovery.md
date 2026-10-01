@@ -112,7 +112,7 @@ The dashboard separates searched products under **Discovery** from persisted cat
 
 An authenticated **Import product** action invokes the `import-cj-product` Edge Function. The function verifies the user JWT and active internal membership, keeps the CJ and Supabase secret keys server-side, retrieves the complete product/variant/inventory snapshot, and uses the existing atomic ingestion RPC. A successful import immediately appears in the Imported products lane; repeat imports refresh the existing mapping.
 
-Discovery cards show **Europe · Not checked** because supplier variants are not imported yet. Imported cards can run a one-unit CJ freight check for a representative in-stock variant to the Netherlands, Belgium, Germany, France, Spain, and Italy. They then show destination coverage, a cost range, and the country-level carrier and delivery estimate. This initial set does not prove all-Europe coverage. CJ's product-level free-shipping marker is never treated as destination evidence.
+Discovery cards show **Worldwide · Not checked** because supplier variants are not imported yet. Imported cards progressively check one-unit CJ freight for a representative in-stock variant across CJ's published 249-country catalog. They show confirmed, unavailable, and unchecked counts, a confirmed cost range, and country-level carrier and delivery estimates. Unchecked destinations remain potential markets and are never presented as unavailable. CJ's product-level free-shipping marker is never treated as destination evidence.
 
 ## Current limits and next work
 
@@ -120,4 +120,4 @@ CJ listing activity is not verified sales. CJ Trending is not proof of market de
 
 This slice does not schedule recurring runs, request destination shipping quotes, calculate landed cost, scrape market sources, publish products, maintain listings, purchase inventory, fulfill orders, or integrate with the external orchestrator.
 
-The next discovery work should use real persisted runs to calibrate thresholds and scoring, add variant-quality enrichment for the strongest candidates, and improve the dashboard's run-level filtering. Market validation, broader Europe coverage, and landed-cost economics remain later workflows with their own evidence sources.
+The next discovery work should use real persisted runs to calibrate thresholds and scoring, add variant-quality enrichment for the strongest candidates, and improve the dashboard's run-level filtering. Market validation, automated freight refresh, and landed-cost economics remain later workflows with their own evidence sources.

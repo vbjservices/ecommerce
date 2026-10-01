@@ -1,6 +1,6 @@
 -- Current normalized shipping estimates for one supplier variant and destination.
 -- Raw provider responses remain append-only in the private schema.
-create table public.supplier_shipping_quotes (
+create table if not exists public.supplier_shipping_quotes (
   id uuid primary key default gen_random_uuid(),
   supplier_variant_id uuid not null references public.supplier_variants(id) on delete cascade,
   destination_country_code text not null check (destination_country_code ~ '^[A-Z]{2}$'),
@@ -28,10 +28,10 @@ create table public.supplier_shipping_quotes (
     (delivery_days_min >= 0 and delivery_days_max >= delivery_days_min)
   )
 );
-create index supplier_shipping_quotes_variant_idx
+create index if not exists supplier_shipping_quotes_variant_idx
   on public.supplier_shipping_quotes(supplier_variant_id, quoted_at desc);
 
-create table private.supplier_shipping_snapshots (
+create table if not exists private.supplier_shipping_snapshots (
   id uuid primary key default gen_random_uuid(),
   supplier_variant_id uuid not null references public.supplier_variants(id),
   source text not null check (btrim(source) <> ''),
@@ -39,7 +39,7 @@ create table private.supplier_shipping_snapshots (
   raw_payload jsonb not null check (jsonb_typeof(raw_payload) = 'object'),
   created_at timestamptz not null default now()
 );
-create index supplier_shipping_snapshots_history_idx
+create index if not exists supplier_shipping_snapshots_history_idx
   on private.supplier_shipping_snapshots(supplier_variant_id, quoted_at desc);
 
 alter table public.supplier_shipping_quotes enable row level security;
@@ -47,16 +47,18 @@ alter table private.supplier_shipping_snapshots enable row level security;
 revoke all on public.supplier_shipping_quotes from public, anon, authenticated;
 grant select on public.supplier_shipping_quotes to authenticated;
 grant all on public.supplier_shipping_quotes to service_role;
+drop policy if exists internal_read on public.supplier_shipping_quotes;
 create policy internal_read on public.supplier_shipping_quotes
   for select to authenticated using ((select public.is_internal_user()));
 revoke all on private.supplier_shipping_snapshots from public, anon, authenticated;
 grant select, insert on private.supplier_shipping_snapshots to service_role;
 
+drop trigger if exists set_updated_at on public.supplier_shipping_quotes;
 create trigger set_updated_at
 before update on public.supplier_shipping_quotes
 for each row execute function private.set_updated_at();
 
-create function public.upsert_supplier_shipping_quotes(
+create or replace function public.upsert_supplier_shipping_quotes(
   p_supplier_variant_id uuid,
   p_quoted_at timestamptz,
   p_source text,

@@ -93,7 +93,7 @@ npm run cj:discover -- "cat toy" --profile=pets
 
 `cj:search` is the legacy read-only preview and does not persist results. `cj:discover` executes the budgeted V2 pipeline and atomically persists its run, query plan, ranked candidates, occurrences, normalized observations, shortlist image galleries, and private raw pages. Apply `20260930000200_discovery_runs.sql`, `20260930000300_product_image_galleries.sql`, and `20261001000100_supplier_shipping_quotes.sql` before using every dashboard feature. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product, image gallery, and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
 
-The image-gallery migration is safe to retry in the SQL Editor. This matters when an earlier attempt created `private.normalize_image_urls` and then stopped: use the current complete file and run it again rather than deleting the existing helper function.
+The image-gallery and shipping-quote migrations are safe to retry in the SQL Editor. This matters when an earlier attempt created a helper function or table and then stopped: use the current complete file and run it again rather than deleting existing objects.
 
 ### Deploy one-click product import
 
@@ -108,15 +108,15 @@ npx --yes supabase@2.117.0 functions deploy quote-cj-shipping --use-api
 
 Keep JWT verification enabled. The function checks the signed-in user against `private.internal_users` through `is_internal_user()` before reading a discovery candidate or invoking privileged ingestion. Test by importing one Discovery card and confirming that it changes to **Imported** and appears in the Imported products tab.
 
-On an imported card, **Check Europe shipping** retrieves one-unit estimates for a representative in-stock variant to the Netherlands, Belgium, Germany, France, Spain, and Italy. The dashboard shows the range plus a country-by-country carrier and delivery estimate. Quotes replace the current normalized value while raw CJ responses remain private history. Recheck before approval because freight prices and routes change.
+On an imported card, **Start worldwide shipping scan** checks CJ's published 249-country destination catalog in batches of 20. High-value markets are checked first, then every remaining CJ country code. The dashboard always separates confirmed, unavailable, and unchecked destinations, shows the confirmed cost range, and lists country-level carrier and delivery estimates. Continue the scan until no destinations remain unchecked. Each batch uses one inventory call plus up to 20 freight calls; at CJ's current point schedule that is up to 210 points. Quotes replace the current normalized value while raw CJ responses remain private history. Recheck before approval because freight prices and routes change.
 
 ## 6. Prepare the Shopify channel
 
-Shopify is the selected first channel and Europe is the initial shipping market. Channel publishing is not active yet, so do not put Shopify credentials in browser variables or GitHub Pages.
+Shopify is the selected first channel. Channel publishing is not active yet, so do not put Shopify credentials in browser variables or GitHub Pages.
 
 Create the app in Shopify's Dev Dashboard, choose custom distribution to your store, request only `write_products` for the first product-publishing slice, release the app version, and install it on the store. Keep the Client secret in a server-side secret store. Record the store's permanent `*.myshopify.com` domain; a custom storefront domain can change and is not the Admin API identity.
 
-The next channel slice will exchange the Client ID and Client secret for a short-lived server token, publish an approved imported product through Shopify's GraphQL Admin API, and persist the Shopify product/variant IDs for idempotent updates. Shipping quotes and landed cost will be validated for Europe before a product can be approved for publishing.
+The next channel slice will exchange the Client ID and Client secret for a short-lived server token, publish an approved imported product through Shopify's GraphQL Admin API, and persist the Shopify product/variant IDs for idempotent updates. Shopify markets and shipping zones will be limited to destinations that the product's current supplier evidence confirms.
 
 ## 7. Publish using the existing Pages setting
 
