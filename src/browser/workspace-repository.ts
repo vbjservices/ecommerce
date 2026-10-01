@@ -23,6 +23,11 @@ const shippingQuoteSummary = z.object({
   quoted_at: z.string(),
 });
 
+const discoveryShippingQuoteSummary = shippingQuoteSummary.omit({ supplier_variant_id: true }).extend({
+  discovery_candidate_id: z.uuid(),
+  external_variant_id: z.string(),
+});
+
 const candidateBaseSummary = z.object({
   id: z.uuid(), status: z.enum(candidateStatuses), created_at: z.string(),
   products: z.object({
@@ -47,7 +52,7 @@ const candidateSummary = candidateBaseSummary.extend({
 });
 export type CandidateSummary = z.infer<typeof candidateSummary>;
 
-const discoveryCandidateSummary = z.object({
+const discoveryCandidateBaseSummary = z.object({
   id: z.uuid(),
   rank: z.number().int().positive(),
   external_product_id: z.string(),
@@ -87,6 +92,9 @@ const discoveryCandidateSummary = z.object({
       explanation: z.string(),
     })),
   }),
+});
+const discoveryCandidateSummary = discoveryCandidateBaseSummary.extend({
+  shipping_quotes: z.array(discoveryShippingQuoteSummary),
 });
 export type DiscoveryCandidateSummary = z.infer<typeof discoveryCandidateSummary>;
 
@@ -209,7 +217,32 @@ export async function readRecentDiscoveryCandidates(
     })) ?? null;
   }
   if (error) throw new Error('Discovery results could not be loaded. Please try again.');
-  const parsed = z.array(discoveryCandidateSummary).safeParse(data);
+  const parsed = z.array(discoveryCandidateBaseSummary).safeParse(data);
   if (!parsed.success) throw new Error('The discovery data is not in the expected format. Contact an administrator.');
-  return parsed.data;
+  const candidateIds = parsed.data.map((candidate) => candidate.id);
+  let quotes: z.infer<typeof discoveryShippingQuoteSummary>[] = [];
+  if (candidateIds.length) {
+    const quoteResult = await client.from('discovery_shipping_quotes')
+      .select(`discovery_candidate_id,external_variant_id,destination_country_code,origin_country_code,
+        quantity,available,shipping_method,cost,currency,delivery_days_min,delivery_days_max,quoted_at`)
+      .in('discovery_candidate_id', candidateIds);
+    if (quoteResult.error && !['42P01', 'PGRST205'].includes(quoteResult.error.code)) {
+      throw new Error('Discovery shipping quotes could not be loaded. Please try again.');
+    }
+    if (!quoteResult.error) {
+      const parsedQuotes = z.array(discoveryShippingQuoteSummary).safeParse(quoteResult.data);
+      if (!parsedQuotes.success) throw new Error('Discovery shipping quote data is not in the expected format.');
+      quotes = parsedQuotes.data;
+    }
+  }
+  const byCandidate = new Map<string, z.infer<typeof discoveryShippingQuoteSummary>[]>();
+  for (const quote of quotes) {
+    const current = byCandidate.get(quote.discovery_candidate_id) ?? [];
+    current.push(quote);
+    byCandidate.set(quote.discovery_candidate_id, current);
+  }
+  return z.array(discoveryCandidateSummary).parse(parsed.data.map((candidate) => ({
+    ...candidate,
+    shipping_quotes: byCandidate.get(candidate.id) ?? [],
+  })));
 }

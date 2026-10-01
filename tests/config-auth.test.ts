@@ -133,10 +133,12 @@ test('repository stays readable during the additive product image migration', as
 });
 
 test('discovery read model tolerates an undeployed migration and validates deployed rows', async () => {
-  const client = (data: unknown, error: unknown) => ({
-    from: () => ({ select: () => ({ order: () => ({ order: () => ({
-      limit: async () => ({ data, error }),
-    }) }) }) }),
+  const client = (data: unknown, error: unknown, quotes: unknown[] = []) => ({
+    from: (table: string) => table === 'discovery_candidates'
+      ? { select: () => ({ order: () => ({ order: () => ({
+        limit: async () => ({ data, error }),
+      }) }) }) }
+      : { select: () => ({ in: async () => ({ data: quotes, error: null }) }) },
   }) as unknown as SupabaseClient;
   assert.deepEqual(await readRecentDiscoveryCandidates(client(null, { code: '42P01' })), []);
   await assert.rejects(readRecentDiscoveryCandidates(client([{ score: 'invalid' }], null)), /expected format/);
@@ -170,7 +172,16 @@ test('discovery read model tolerates an undeployed migration and validates deplo
       risks: [],
     },
   };
-  assert.deepEqual(await readRecentDiscoveryCandidates(client([row], null)), [row]);
+  const quote = {
+    discovery_candidate_id: row.id,
+    external_variant_id: 'cj-variant-1',
+    destination_country_code: 'NL', origin_country_code: 'CN', quantity: 1,
+    available: true, shipping_method: 'CJPacket', cost: '4.25', currency: 'USD',
+    delivery_days_min: 5, delivery_days_max: 9, quoted_at: '2026-10-01T10:00:00Z',
+  };
+  assert.deepEqual(await readRecentDiscoveryCandidates(client([row], null, [quote])), [{
+    ...row, shipping_quotes: [quote],
+  }]);
 });
 
 test('discovery read model falls back to the primary image until galleries are migrated', async () => {
@@ -194,17 +205,19 @@ test('discovery read model falls back to the primary image until galleries are m
     },
   };
   const client = {
-    from: () => ({ select: () => ({ order: () => ({ order: () => ({
-      limit: async () => {
-        calls++;
-        return calls === 1
-          ? { data: null, error: { code: '42703' } }
-          : { data: [row], error: null };
-      },
-    }) }) }) }),
+    from: (table: string) => table === 'discovery_candidates'
+      ? { select: () => ({ order: () => ({ order: () => ({
+        limit: async () => {
+          calls++;
+          return calls === 1
+            ? { data: null, error: { code: '42703' } }
+            : { data: [row], error: null };
+        },
+      }) }) }) }
+      : { select: () => ({ in: async () => ({ data: [], error: null }) }) },
   } as unknown as SupabaseClient;
   assert.deepEqual(await readRecentDiscoveryCandidates(client), [{
-    ...row, image_urls: ['https://example.com/cat.jpg'],
+    ...row, image_urls: ['https://example.com/cat.jpg'], shipping_quotes: [],
   }]);
   assert.equal(calls, 2);
 });

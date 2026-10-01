@@ -220,6 +220,60 @@ test('trusted supplier ingestion is atomic, idempotent, and retains raw history'
     );
     assert.equal(shippingSnapshots.rows[0]!.count, 1);
 
+    const supplier = await db.query<{ id: string }>(
+      `select id from public.suppliers where code = 'cj'`,
+    );
+    const run = await db.query<{ id: string }>(`
+      insert into public.discovery_runs(
+        supplier_id,profile_id,original_query,status,configuration_version,scoring_version,
+        started_at,completed_at,cache_expires_at,budget,metrics,warnings
+      ) values (
+        $1::uuid,'pets','cat toy','completed','test','test',
+        '2026-09-29T09:00:00Z','2026-09-29T09:01:00Z','2026-09-30T09:01:00Z',
+        '{}'::jsonb,'{}'::jsonb,'[]'::jsonb
+      ) returning id
+    `, [supplier.rows[0]!.id]);
+    const discovery = await db.query<{ id: string }>(`
+      insert into public.discovery_candidates(
+        run_id,supplier_id,external_product_id,rank,title,eligibility_status,relevance_level,
+        score,confidence,coverage,assessment
+      ) values (
+        $1::uuid,$2::uuid,'1561984433618694144',1,'Catnip Balls','pass','exact',
+        90,90,90,'{}'::jsonb
+      ) returning id
+    `, [run.rows[0]!.id, supplier.rows[0]!.id]);
+    await db.exec('begin');
+    try {
+      await db.exec('set local role service_role');
+      const discoveryQuotePayload = JSON.stringify([{
+        destination_country_code: 'DE', origin_country_code: 'CN', quantity: 1,
+        available: true, shipping_method: 'CJPacket', cost: '5.50', currency: 'USD',
+        delivery_days_min: 6, delivery_days_max: 10,
+      }]);
+      const saved = await db.query<{ saved: number }>(`
+        select public.upsert_discovery_shipping_quotes(
+          $1::uuid,$2,$3::timestamptz,$4,$5::jsonb,$6::jsonb
+        ) as saved
+      `, [
+        discovery.rows[0]!.id, '2506170616321605300', '2026-09-29T11:45:00Z',
+        'cj-freight', discoveryQuotePayload, JSON.stringify({ request: 'private' }),
+      ]);
+      assert.equal(saved.rows[0]!.saved, 1);
+      const promoted = await db.query<{ promoted: number }>(`
+        select public.promote_discovery_shipping_quotes($1::uuid,$2::uuid) as promoted
+      `, [discovery.rows[0]!.id, first.supplier_product_id]);
+      assert.equal(promoted.rows[0]!.promoted, 1);
+      await db.exec('commit');
+    } catch (error) {
+      await db.exec('rollback');
+      throw error;
+    }
+    const promotedQuote = await db.query<{ cost: string }>(`
+      select cost::text from public.supplier_shipping_quotes
+      where supplier_variant_id = $1::uuid and destination_country_code = 'DE'
+    `, [quotedVariant.rows[0]!.id]);
+    assert.deepEqual(promotedQuote.rows, [{ cost: '5.500000' }]);
+
     const duplicate = [initialVariants[0], initialVariants[0]];
     await assert.rejects(
       ingest(db, 'service_role', '2026-09-29T12:00:00Z', duplicate),

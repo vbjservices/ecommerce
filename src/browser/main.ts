@@ -130,8 +130,9 @@ async function start() {
       })[0]?.shipping_quotes ?? [];
   }
 
-  function shippingOverview(candidate: WorkspaceSnapshot['candidates'][number]) {
-    const quotes = productShippingQuotes(candidate);
+  function shippingOverview<Quote extends {
+    available: boolean; cost: number | string | null; currency: string | null;
+  }>(quotes: Quote[]) {
     if (!quotes.length) return {
       status: shippingMarketStatusLabel(NOT_CHECKED_SHIPPING),
       cost: 'Not checked',
@@ -158,8 +159,11 @@ async function start() {
     };
   }
 
-  function shippingQuoteDetails(candidate: WorkspaceSnapshot['candidates'][number]) {
-    const quotes = productShippingQuotes(candidate);
+  function shippingQuoteDetails<Quote extends {
+    destination_country_code: string; available: boolean; cost: number | string | null;
+    currency: string | null; delivery_days_min: number | null; delivery_days_max: number | null;
+    shipping_method: string | null;
+  }>(quotes: Quote[]) {
     if (!quotes.length) return null;
     const details = document.createElement('details');
     const summary = document.createElement('summary');
@@ -203,12 +207,48 @@ async function start() {
     return ({
       integration_not_configured: 'The CJ Edge secret is not configured.',
       provider_authentication: 'CJ rejected the configured API key.',
+      provider_rate_limited: 'CJ\'s API point limit is temporarily exhausted. Try again after it replenishes.',
       provider_unavailable: 'CJ is temporarily unavailable. Try again shortly.',
       candidate_not_found: 'This product is no longer available to this workspace.',
       invalid_provider_payload: 'CJ returned product data that could not be safely imported.',
       persistence_failed: 'Supabase could not save the result. Check that all migrations ran.',
       quote_failed: 'The shipping estimate could not be completed.',
     } as Record<string, string>)[code ?? ''] ?? fallback;
+  }
+
+  function shippingScanControls(
+    body: { candidateId: string } | { discoveryCandidateId: string },
+    checkedDestinations: number,
+  ) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = checkedDestinations === 0
+      ? 'Start worldwide shipping scan'
+      : checkedDestinations < INITIAL_SHIPPING_MARKET.totalDestinations
+        ? 'Continue worldwide shipping scan'
+        : 'Refresh worldwide shipping';
+    const status = document.createElement('span');
+    status.className = 'import-status';
+    status.setAttribute('role', 'status');
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      button.textContent = 'Checking shipping…';
+      status.textContent = 'Checking the next 8 destinations. This can take around 20 seconds.';
+      const result = await client.functions.invoke('quote-cj-shipping', { body });
+      if (result.error) {
+        button.disabled = false;
+        button.textContent = 'Try shipping again';
+        status.textContent = await functionErrorMessage(
+          result.error,
+          'Shipping check failed. Confirm the migration and function deployment.',
+        );
+        return;
+      }
+      button.textContent = 'Shipping checked';
+      status.textContent = 'Worldwide shipping coverage updated.';
+      await refresh({ force: true, background: true });
+    });
+    return { button, status };
   }
 
   function discoveryCost(candidate: WorkspaceSnapshot['discoveryCandidates'][number]) {
@@ -344,16 +384,19 @@ async function start() {
 
   function renderDiscoveryCandidates(current: WorkspaceSnapshot) {
     const list = app.querySelector('.discovery-candidates')!;
-    if (!current.discoveryCandidates.length) {
-      list.innerHTML = '<div class="empty compact"><h3>No Discovery V2 runs yet</h3><p>Run the trusted discovery command after applying its migration.</p></div>';
+    const importedProductIds = new Set(current.candidates.map(
+      (candidate) => candidate.supplier_products.external_product_id,
+    ));
+    const candidates = current.discoveryCandidates.filter(
+      (candidate) => !importedProductIds.has(candidate.external_product_id),
+    );
+    if (!candidates.length) {
+      list.innerHTML = '<div class="empty compact"><h3>No products waiting in Discovery</h3><p>Run product discovery to find more products. Imported products stay available in their own tab.</p></div>';
       return;
     }
     const ul = document.createElement('ul');
     ul.className = 'discovery-list';
-    const importedProductIds = new Set(current.candidates.map(
-      (candidate) => candidate.supplier_products.external_product_id,
-    ));
-    for (const candidate of current.discoveryCandidates) {
+    for (const candidate of candidates) {
       const li = document.createElement('li');
       li.className = 'discovery-card';
       const imageFrame = imageCarousel(
@@ -380,6 +423,7 @@ async function start() {
       facts.className = 'candidate-facts discovery-facts';
       const strategyCount = new Set(candidate.discovery_occurrences.map((item) => item.strategy)).size;
       const observation = candidate.supplier_product_observations[0];
+      const shipping = shippingOverview(candidate.shipping_quotes);
       facts.append(
         metric('Score', String(Math.round(Number(candidate.score)))),
         metric('Confidence', `${Math.round(Number(candidate.confidence))}%`),
@@ -392,7 +436,8 @@ async function start() {
         metric('CJ listings', count(observation?.listing_count)),
         metric('Delivery estimate', deliveryWindow(candidate)),
         metric('Variants', 'After import'),
-        metric('Shipping', shippingMarketStatusLabel(NOT_CHECKED_SHIPPING)),
+        metric('Shipping', shipping.status),
+        metric('Est. shipping · 1 unit', shipping.cost),
       );
       const details = document.createElement('details');
       const summary = document.createElement('summary');
@@ -421,13 +466,17 @@ async function start() {
         details.append(group);
       }
       body.append(heading, facts, details);
+      const quoteDetails = shippingQuoteDetails(candidate.shipping_quotes);
+      if (quoteDetails) body.append(quoteDetails);
       const cardActions = document.createElement('div');
       cardActions.className = 'card-actions';
+      const shippingControls = shippingScanControls(
+        { discoveryCandidateId: candidate.id }, candidate.shipping_quotes.length,
+      );
+      cardActions.append(shippingControls.button, shippingControls.status);
       const importButton = document.createElement('button');
       importButton.type = 'button';
-      const alreadyImported = importedProductIds.has(candidate.external_product_id);
-      importButton.textContent = alreadyImported ? 'Imported' : 'Import product';
-      importButton.disabled = alreadyImported;
+      importButton.textContent = 'Import product';
       const importStatus = document.createElement('span');
       importStatus.className = 'import-status';
       importStatus.setAttribute('role', 'status');
@@ -497,7 +546,11 @@ async function start() {
       }
     };
     const tabs = app.querySelectorAll<HTMLButtonElement>('[role="tab"]');
-    tabs[0]!.querySelector('.tab-count')!.textContent = String(current.discoveryCandidates.length);
+    const importedIds = new Set(candidates.map((candidate) => candidate.supplier_products.external_product_id));
+    const discoveryCount = current.discoveryCandidates.filter(
+      (candidate) => !importedIds.has(candidate.external_product_id),
+    ).length;
+    tabs[0]!.querySelector('.tab-count')!.textContent = String(discoveryCount);
     tabs[1]!.querySelector('.tab-count')!.textContent = String(candidates.length);
     for (const tab of tabs) {
       tab.addEventListener('click', () => selectView(tab.dataset.view as 'discovery' | 'imported'));
@@ -541,7 +594,8 @@ async function start() {
         status.textContent = candidate.status.replaceAll('_', ' ');
         heading.append(identity, status);
 
-        const shipping = shippingOverview(candidate);
+        const productQuotes = productShippingQuotes(candidate);
+        const shipping = shippingOverview(productQuotes);
         const facts = document.createElement('dl');
         facts.className = 'candidate-facts';
         facts.append(
@@ -557,42 +611,12 @@ async function start() {
 
         const sourceUrl = safeSourceUrl(candidate.supplier_products.source_url);
         body.append(heading, facts);
-        const quoteDetails = shippingQuoteDetails(candidate);
+        const quoteDetails = shippingQuoteDetails(productQuotes);
         if (quoteDetails) body.append(quoteDetails);
         const cardActions = document.createElement('div');
         cardActions.className = 'card-actions';
-        const quoteButton = document.createElement('button');
-        quoteButton.type = 'button';
-        const checkedDestinations = productShippingQuotes(candidate).length;
-        quoteButton.textContent = checkedDestinations === 0
-          ? 'Start worldwide shipping scan'
-          : checkedDestinations < INITIAL_SHIPPING_MARKET.totalDestinations
-            ? 'Continue worldwide shipping scan'
-            : 'Refresh worldwide shipping';
-        const quoteStatus = document.createElement('span');
-        quoteStatus.className = 'import-status';
-        quoteStatus.setAttribute('role', 'status');
-        quoteButton.addEventListener('click', async () => {
-          quoteButton.disabled = true;
-          quoteButton.textContent = 'Checking shipping…';
-          quoteStatus.textContent = 'Checking the next 20 destinations. This can take around 30 seconds.';
-          const result = await client.functions.invoke('quote-cj-shipping', {
-            body: { candidateId: candidate.id },
-          });
-          if (result.error) {
-            quoteButton.disabled = false;
-            quoteButton.textContent = 'Try shipping again';
-            quoteStatus.textContent = await functionErrorMessage(
-              result.error,
-              'Shipping check failed. Confirm the migration and function deployment.',
-            );
-            return;
-          }
-          quoteButton.textContent = 'Shipping checked';
-          quoteStatus.textContent = 'Worldwide shipping coverage updated.';
-          await refresh({ force: true, background: true });
-        });
-        cardActions.append(quoteButton, quoteStatus);
+        const shippingControls = shippingScanControls({ candidateId: candidate.id }, productQuotes.length);
+        cardActions.append(shippingControls.button, shippingControls.status);
         if (sourceUrl) {
           const link = document.createElement('a');
           link.className = 'source-link';

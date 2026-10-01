@@ -232,11 +232,21 @@ export default {
       })
       const row = Array.isArray(saved.data) ? object(saved.data[0]) : null
       if (saved.error || !row) throw new Error('persistence_failed')
+      const supplierProductId = string(row.supplier_product_id)
+      if (!supplierProductId || !uuidPattern.test(supplierProductId)) {
+        throw new Error('persistence_failed')
+      }
+      const promoted = await ctx.supabaseAdmin.rpc('promote_discovery_shipping_quotes', {
+        p_discovery_candidate_id: discoveryCandidateId,
+        p_supplier_product_id: supplierProductId,
+      })
+      if (promoted.error) throw new Error('persistence_failed')
       return Response.json({
         imported: true,
         created: row.created === true,
         candidateId: string(row.candidate_id),
         variantCount: number(row.variant_count),
+        promotedShippingQuotes: number(promoted.data) ?? 0,
       })
     } catch (error) {
       const code = publicError(error)

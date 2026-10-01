@@ -106,9 +106,11 @@ npx --yes supabase@2.117.0 functions deploy import-cj-product --use-api
 npx --yes supabase@2.117.0 functions deploy quote-cj-shipping --use-api
 ```
 
-Keep JWT verification enabled. The function checks the signed-in user against `private.internal_users` through `is_internal_user()` before reading a discovery candidate or invoking privileged ingestion. Test by importing one Discovery card and confirming that it changes to **Imported** and appears in the Imported products tab.
+Keep JWT verification enabled. The functions check the signed-in user against `private.internal_users` through `is_internal_user()` before reading a candidate or invoking privileged writes. Test by scanning one Discovery card, importing it, and confirming that it leaves Discovery, appears in Imported products, and retains the checked shipping evidence.
 
-On an imported card, **Start worldwide shipping scan** checks CJ's published 249-country destination catalog in batches of 20. High-value markets are checked first, then every remaining CJ country code. The dashboard always separates confirmed, unavailable, and unchecked destinations, shows the confirmed cost range, and lists country-level carrier and delivery estimates. Continue the scan until no destinations remain unchecked. Each batch uses one inventory call plus up to 20 freight calls; at CJ's current point schedule that is up to 210 points. Quotes replace the current normalized value while raw CJ responses remain private history. Recheck before approval because freight prices and routes change.
+On a Discovery or imported card, **Start worldwide shipping scan** checks CJ's published 249-country destination catalog in batches of 8. High-value markets are checked first, then every remaining CJ country code. A rejected destination is left unchecked for a later retry while successful destinations in the same batch are saved. The dashboard separates confirmed, unavailable, and unchecked destinations, shows the confirmed cost range, and lists country-level carrier and delivery estimates. Continue the scan until no destinations remain unchecked.
+
+A pre-import batch uses one inventory call, one variant call, and up to 8 freight calls; at CJ's current point schedule that is up to 100 points. Once imported, the selected variant is already known, so a batch uses up to 90 points. Quotes replace the current normalized value while raw CJ responses remain private history. Recheck before approval because freight prices and routes change.
 
 ## 6. Prepare the Shopify channel
 
@@ -146,3 +148,6 @@ GitHub Pages may take a few minutes to refresh after a push. No server secrets, 
 - [GitHub Pages branch publication](https://docs.github.com/en/pages/getting-started-with-github-pages/creating-a-github-pages-site)
 - [Shopify Dev Dashboard apps](https://shopify.dev/docs/apps/build/dev-dashboard/create-apps-using-dev-dashboard)
 - [Shopify client credentials grant](https://shopify.dev/docs/apps/build/authentication-authorization/client-credentials-grant)
+- [CJ freight calculation](https://developers.cjdropshipping.com/en/api/api2/api/logistic.html)
+- [CJ country catalog](https://developers.cjdropshipping.com/en/api/api2/standard/ps-country.html)
+- [CJ API point schedule](https://developers.cjdropshipping.com/en/api/api2/standard/points.html)
