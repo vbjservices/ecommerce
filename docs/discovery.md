@@ -118,6 +118,6 @@ Discovery cards show **Worldwide · Not checked** because supplier variants are 
 
 CJ listing activity is not verified sales. CJ Trending is not proof of market demand. CJ inventory is not consumer popularity. External demand is not measured, and profitability is not proven.
 
-This slice does not schedule recurring runs, request destination shipping quotes, calculate landed cost, scrape market sources, publish products, maintain listings, purchase inventory, fulfill orders, or integrate with the external orchestrator.
+The discovery slice itself does not schedule recurring runs, calculate landed cost, scrape market sources, publish products, maintain listings, purchase inventory, fulfill orders, or integrate with the external orchestrator. Destination quotes and landed-cost review now happen after shortlist discovery through the separate shipping and imported-product review workflows.
 
-The next discovery work should use real persisted runs to calibrate thresholds and scoring, add variant-quality enrichment for the strongest candidates, and improve the dashboard's run-level filtering. Market validation, automated freight refresh, and landed-cost economics remain later workflows with their own evidence sources.
+The next discovery work should use real persisted runs to calibrate thresholds and scoring, add variant-quality enrichment for the strongest candidates, and improve the dashboard's run-level filtering. Market validation and automated freight refresh remain later workflows with their own evidence sources.

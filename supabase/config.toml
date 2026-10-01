@@ -32,3 +32,6 @@ verify_jwt = true
 
 [functions.quote-cj-shipping]
 verify_jwt = true
+
+[functions.review-product]
+verify_jwt = true

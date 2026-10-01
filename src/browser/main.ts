@@ -9,9 +9,16 @@ import {
   NOT_CHECKED_SHIPPING,
   shippingMarketStatusLabel,
 } from '../domain/shipping';
+import { compareDecimalAmounts, estimateReviewEconomics } from '../domain/reviews';
 
 const app = document.querySelector<HTMLElement>('#app')!;
 const carouselTimers = new Set<number>();
+const europeMarketCodes = new Set([
+  'AL', 'AD', 'AT', 'BY', 'BE', 'BA', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR',
+  'DE', 'GR', 'HU', 'IS', 'IE', 'IT', 'XK', 'LV', 'LI', 'LT', 'LU', 'MT', 'MD', 'MC',
+  'ME', 'NL', 'MK', 'NO', 'PL', 'PT', 'RO', 'SM', 'RS', 'SK', 'SI', 'ES', 'SE', 'CH',
+  'UA', 'GB', 'VA',
+]);
 
 function stopCarousels() {
   for (const timer of carouselTimers) window.clearInterval(timer);
@@ -213,6 +220,14 @@ async function start() {
       invalid_provider_payload: 'CJ returned product data that could not be safely imported.',
       persistence_failed: 'Supabase could not save the result. Check that all migrations ran.',
       quote_failed: 'The shipping estimate could not be completed.',
+      review_validation_failed: 'Some review fields are invalid. Check the entered values.',
+      review_candidate_not_found: 'This imported product is no longer available for review.',
+      review_variant_mismatch: 'The selected variants no longer match this product. Refresh and try again.',
+      review_incomplete: 'Select at least one market and one priced variant before approval.',
+      review_fx_rate_required: 'Enter the current cost-to-EUR exchange rate before approval.',
+      review_cost_missing: 'Every selected variant needs a current supplier cost before approval.',
+      review_shipping_evidence_missing: 'Every selected market needs a confirmed shipping quote before approval.',
+      review_rejection_note_required: 'Add a review note explaining why the product is rejected.',
     } as Record<string, string>)[code ?? ''] ?? fallback;
   }
 
@@ -380,6 +395,334 @@ async function start() {
     show(0);
     start();
     return frame;
+  }
+
+  function formatCurrency(value: string | number, currency: string) {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return 'Unknown';
+    try {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
+    } catch {
+      return `${value} ${currency}`;
+    }
+  }
+
+  function reviewEditor(candidate: WorkspaceSnapshot['candidates'][number]) {
+    const review = candidate.review;
+    const variants = candidate.supplier_products.supplier_variants;
+    const productQuotes = productShippingQuotes(candidate);
+    const sourceCurrencies = new Set([
+      ...variants.map((variant) => variant.currency).filter((value): value is string => value !== null),
+      ...productQuotes.map((quote) => quote.currency).filter((value): value is string => value !== null),
+    ]);
+    const costCurrency = review?.cost_currency ?? [...sourceCurrencies][0] ?? 'USD';
+    const retailCurrency = review?.retail_currency ?? 'EUR';
+    const reviewVariants = new Map(review?.product_review_variants.map(
+      (variant) => [variant.supplier_variant_id, variant],
+    ) ?? []);
+    const selectedMarkets = new Set(review?.target_market_codes ?? []);
+    const quoteByMarket = new Map(productQuotes
+      .filter((quote) => quote.available && quote.cost !== null && quote.currency === costCurrency)
+      .map((quote) => [quote.destination_country_code, quote]));
+    const marketCodes = [...new Set([
+      ...[...quoteByMarket.keys()].filter((code) => europeMarketCodes.has(code)),
+      ...selectedMarkets,
+    ])].sort();
+    const names = new Intl.DisplayNames(undefined, { type: 'region' });
+
+    const details = document.createElement('details');
+    details.className = 'review-panel';
+    if (candidate.status === 'ready_for_review') details.open = true;
+    const summary = document.createElement('summary');
+    summary.textContent = review ? 'Product review and pricing' : 'Prepare product for approval';
+    const form = document.createElement('form');
+    form.className = 'review-form';
+    form.noValidate = true;
+
+    const contentGrid = document.createElement('div');
+    contentGrid.className = 'review-content-grid';
+    const titleLabel = document.createElement('label');
+    titleLabel.textContent = 'Store title';
+    const titleInput = document.createElement('input');
+    titleInput.maxLength = 255;
+    titleInput.required = true;
+    titleInput.value = review?.title ?? candidate.products.title;
+    titleLabel.append(titleInput);
+    const descriptionLabel = document.createElement('label');
+    descriptionLabel.textContent = 'Store description';
+    const descriptionInput = document.createElement('textarea');
+    descriptionInput.maxLength = 10_000;
+    descriptionInput.rows = 5;
+    descriptionInput.value = review?.description ?? candidate.products.description ?? '';
+    descriptionLabel.append(descriptionInput);
+    contentGrid.append(titleLabel, descriptionLabel);
+
+    const assumptions = document.createElement('fieldset');
+    assumptions.className = 'review-assumptions';
+    const assumptionsLegend = document.createElement('legend');
+    assumptionsLegend.textContent = 'Pricing assumptions';
+    const fxLabel = document.createElement('label');
+    fxLabel.textContent = `${costCurrency} to ${retailCurrency} exchange rate`;
+    const fxInput = document.createElement('input');
+    fxInput.type = 'number';
+    fxInput.min = '0.00000001';
+    fxInput.step = '0.0001';
+    fxInput.inputMode = 'decimal';
+    fxInput.value = review?.cost_to_retail_fx_rate === null || review?.cost_to_retail_fx_rate === undefined
+      ? costCurrency === retailCurrency ? '1' : ''
+      : String(review.cost_to_retail_fx_rate);
+    fxLabel.append(fxInput);
+    const reserveLabel = document.createElement('label');
+    reserveLabel.textContent = 'Variable cost reserve %';
+    const reserveInput = document.createElement('input');
+    reserveInput.type = 'number';
+    reserveInput.min = '0';
+    reserveInput.max = '99.999';
+    reserveInput.step = '0.1';
+    reserveInput.inputMode = 'decimal';
+    reserveInput.value = String(review?.cost_reserve_percent ?? 0);
+    reserveLabel.append(reserveInput);
+    const assumptionHelp = document.createElement('p');
+    assumptionHelp.className = 'field-help';
+    assumptionHelp.textContent = 'Use the reserve for payment fees, VAT, advertising, returns, and other variable costs. Estimates use the highest selected-market quote from the scanned representative variant; verify materially different variants before publishing.';
+    assumptions.append(assumptionsLegend, fxLabel, reserveLabel, assumptionHelp);
+
+    const markets = document.createElement('fieldset');
+    markets.className = 'review-markets';
+    const marketLegend = document.createElement('legend');
+    marketLegend.textContent = 'European target markets';
+    markets.append(marketLegend);
+    const marketInputs = new Map<string, HTMLInputElement>();
+    if (!marketCodes.length) {
+      const empty = document.createElement('p');
+      empty.className = 'field-help';
+      empty.textContent = 'Run the worldwide shipping scan until at least one European destination is confirmed.';
+      markets.append(empty);
+    } else {
+      const marketGrid = document.createElement('div');
+      marketGrid.className = 'market-grid';
+      for (const code of marketCodes) {
+        const label = document.createElement('label');
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = code;
+        input.checked = selectedMarkets.has(code);
+        const available = quoteByMarket.has(code);
+        if (!available) label.classList.add('market-unavailable');
+        const name = names.of(code) ?? code;
+        label.append(input, document.createTextNode(`${name}${available ? '' : ' · quote unavailable'}`));
+        marketInputs.set(code, input);
+        marketGrid.append(label);
+      }
+      markets.append(marketGrid);
+    }
+
+    const variantSection = document.createElement('section');
+    variantSection.className = 'review-variants';
+    const variantHeading = document.createElement('div');
+    variantHeading.className = 'review-variant-heading';
+    const variantTitle = document.createElement('h3');
+    variantTitle.textContent = 'Variants and retail pricing';
+    const applySuggestions = document.createElement('button');
+    applySuggestions.type = 'button';
+    applySuggestions.className = 'secondary-button';
+    applySuggestions.textContent = 'Apply suggested prices';
+    variantHeading.append(variantTitle, applySuggestions);
+    const variantTable = document.createElement('div');
+    variantTable.className = 'variant-review-table';
+    const variantControls: Array<{
+      selected: HTMLInputElement; price: HTMLInputElement; economics: HTMLElement;
+      suggestion: HTMLButtonElement; cost: string | null;
+    }> = [];
+
+    const selectedMarketCodes = () => [...marketInputs]
+      .filter(([, input]) => input.checked).map(([code]) => code);
+    const worstShippingCost = () => {
+      const selectedCodes = selectedMarketCodes();
+      const quotes = selectedCodes.map((code) => quoteByMarket.get(code)).filter(
+        (quote): quote is NonNullable<typeof quote> => quote !== undefined && quote.cost !== null,
+      );
+      if (!quotes.length || quotes.length !== selectedCodes.length) return null;
+      return quotes.reduce((highest, quote) =>
+        compareDecimalAmounts(quote.cost!, highest.cost!) === 1 ? quote : highest).cost;
+    };
+    const updateEconomics = () => {
+      const shippingCost = worstShippingCost();
+      for (const control of variantControls) {
+        if (!control.cost || shippingCost === null || !fxInput.value) {
+          control.economics.textContent = 'Landed cost unavailable';
+          control.suggestion.textContent = 'Suggested price unavailable';
+          delete control.suggestion.dataset.price;
+          continue;
+        }
+        const preview = estimateReviewEconomics({
+          supplierCost: control.cost,
+          shippingCost,
+          retailPrice: control.price.value || '1',
+          costToRetailFxRate: fxInput.value,
+          costReservePercent: reserveInput.value || '0',
+        });
+        if (!preview) {
+          control.economics.textContent = 'Check pricing assumptions';
+          control.suggestion.textContent = 'Suggested price unavailable';
+          delete control.suggestion.dataset.price;
+          continue;
+        }
+        control.suggestion.textContent = `Suggested ${formatCurrency(preview.suggestedRetailPrice, retailCurrency)}`;
+        control.suggestion.dataset.price = preview.suggestedRetailPrice;
+        control.economics.textContent = control.price.value
+          ? `Landed ${formatCurrency(preview.landedCost, retailCurrency)} · Gross ${formatCurrency(preview.grossProfit, retailCurrency)} (${(preview.grossMarginBasisPoints / 100).toFixed(1)}%) · Contribution ${formatCurrency(preview.contributionProfit, retailCurrency)} (${(preview.contributionMarginBasisPoints / 100).toFixed(1)}%)`
+          : `Landed ${formatCurrency(preview.landedCost, retailCurrency)}`;
+      }
+    };
+
+    for (const variant of variants) {
+      const saved = reviewVariants.get(variant.id);
+      const row = document.createElement('div');
+      row.className = 'variant-review-row';
+      const identity = document.createElement('label');
+      identity.className = 'variant-choice';
+      const selected = document.createElement('input');
+      selected.type = 'checkbox';
+      selected.checked = saved?.selected ?? false;
+      const optionText = Object.entries(variant.product_variants.options)
+        .map(([name, value]) => `${name}: ${value}`).join(' · ');
+      const variantName = document.createElement('span');
+      variantName.textContent = optionText || variant.product_variants.sku || variant.external_variant_id;
+      identity.append(selected, variantName);
+      const facts = document.createElement('span');
+      facts.className = 'variant-source-facts';
+      facts.textContent = `${variant.cost === null || !variant.currency ? 'Cost unknown' : formatCurrency(variant.cost, variant.currency)} · ${variant.stock === null ? 'Stock unknown' : `${new Intl.NumberFormat().format(variant.stock)} stock`}`;
+      const priceLabel = document.createElement('label');
+      priceLabel.className = 'variant-price';
+      priceLabel.textContent = `${retailCurrency} price`;
+      const price = document.createElement('input');
+      price.type = 'number';
+      price.min = '0.01';
+      price.step = '0.01';
+      price.inputMode = 'decimal';
+      price.value = saved?.retail_price === null || saved?.retail_price === undefined
+        ? '' : String(saved.retail_price);
+      priceLabel.append(price);
+      const economics = document.createElement('span');
+      economics.className = 'variant-economics';
+      const suggestion = document.createElement('button');
+      suggestion.type = 'button';
+      suggestion.className = 'price-suggestion';
+      suggestion.addEventListener('click', () => {
+        if (!suggestion.dataset.price) return;
+        price.value = suggestion.dataset.price;
+        selected.checked = true;
+        updateEconomics();
+      });
+      selected.addEventListener('change', updateEconomics);
+      price.addEventListener('input', updateEconomics);
+      row.append(identity, facts, priceLabel, economics, suggestion);
+      variantTable.append(row);
+      variantControls.push({
+        selected, price, economics, suggestion,
+        cost: variant.cost === null ? null : String(variant.cost),
+      });
+    }
+    for (const input of marketInputs.values()) input.addEventListener('change', updateEconomics);
+    fxInput.addEventListener('input', updateEconomics);
+    reserveInput.addEventListener('input', updateEconomics);
+    applySuggestions.addEventListener('click', () => {
+      updateEconomics();
+      for (const control of variantControls) {
+        if (!control.selected.checked || !control.suggestion.dataset.price) continue;
+        control.price.value = control.suggestion.dataset.price;
+      }
+      updateEconomics();
+    });
+    variantSection.append(variantHeading, variantTable);
+
+    const notesLabel = document.createElement('label');
+    notesLabel.textContent = 'Review notes';
+    const notesInput = document.createElement('textarea');
+    notesInput.maxLength = 5_000;
+    notesInput.rows = 3;
+    notesInput.placeholder = 'Record pricing assumptions, risks, or a rejection reason.';
+    notesInput.value = review?.notes ?? '';
+    notesLabel.append(notesInput);
+
+    const resultStatus = document.createElement('p');
+    resultStatus.className = 'review-status';
+    resultStatus.setAttribute('role', 'status');
+    const actions = document.createElement('div');
+    actions.className = 'review-actions';
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.textContent = review ? 'Save review changes' : 'Save review';
+    const approve = document.createElement('button');
+    approve.type = 'button';
+    approve.textContent = candidate.status === 'approved' ? 'Reapprove changes' : 'Approve for Shopify draft';
+    const reject = document.createElement('button');
+    reject.type = 'button';
+    reject.className = 'danger-button';
+    reject.textContent = 'Reject product';
+    actions.append(save, approve, reject, resultStatus);
+
+    const submit = async (action: 'save' | 'approve' | 'reject') => {
+      for (const button of [save, approve, reject]) button.disabled = true;
+      resultStatus.textContent = action === 'approve' ? 'Approving review…' : action === 'reject' ? 'Recording rejection…' : 'Saving review…';
+      const result = await client.functions.invoke('review-product', {
+        body: {
+          candidateId: candidate.id,
+          action,
+          title: titleInput.value,
+          description: descriptionInput.value,
+          retailCurrency,
+          costCurrency,
+          costToRetailFxRate: fxInput.value || null,
+          costReservePercent: reserveInput.value || '0',
+          targetMarketCodes: selectedMarketCodes(),
+          notes: notesInput.value,
+          variants: variants.map((variant, index) => ({
+            supplierVariantId: variant.id,
+            selected: variantControls[index]!.selected.checked,
+            retailPrice: variantControls[index]!.price.value || null,
+          })),
+        },
+      });
+      if (result.error) {
+        for (const button of [save, approve, reject]) button.disabled = false;
+        resultStatus.textContent = await functionErrorMessage(
+          result.error, 'The review could not be saved. Confirm the migration and function deployment.',
+        );
+        return;
+      }
+      resultStatus.textContent = action === 'approve'
+        ? 'Approved for Shopify draft creation.'
+        : action === 'reject' ? 'Rejection recorded.' : 'Review saved.';
+      await refresh({ force: true, background: true });
+    };
+    save.addEventListener('click', () => { void submit('save'); });
+    approve.addEventListener('click', () => { void submit('approve'); });
+    reject.addEventListener('click', () => { void submit('reject'); });
+
+    form.addEventListener('submit', (event) => event.preventDefault());
+    form.append(contentGrid, assumptions, markets, variantSection, notesLabel, actions);
+    if (review?.product_review_events.length) {
+      const history = document.createElement('details');
+      history.className = 'review-history';
+      const historySummary = document.createElement('summary');
+      historySummary.textContent = `Review history (${review.product_review_events.length})`;
+      const list = document.createElement('ul');
+      for (const event of [...review.product_review_events].sort((left, right) =>
+        Date.parse(right.created_at) - Date.parse(left.created_at))) {
+        const item = document.createElement('li');
+        item.textContent = `${event.event_type} · ${new Intl.DateTimeFormat(undefined, {
+          dateStyle: 'medium', timeStyle: 'short',
+        }).format(new Date(event.created_at))}${event.note ? ` · ${event.note}` : ''}`;
+        list.append(item);
+      }
+      history.append(historySummary, list);
+      form.append(history);
+    }
+    details.append(summary, form);
+    updateEconomics();
+    return details;
   }
 
   function renderDiscoveryCandidates(current: WorkspaceSnapshot) {
@@ -613,6 +956,7 @@ async function start() {
         body.append(heading, facts);
         const quoteDetails = shippingQuoteDetails(productQuotes);
         if (quoteDetails) body.append(quoteDetails);
+        body.append(reviewEditor(candidate));
         const cardActions = document.createElement('div');
         cardActions.className = 'card-actions';
         const shippingControls = shippingScanControls({ candidateId: candidate.id }, productQuotes.length);

@@ -54,3 +54,26 @@ test('worldwide shipping edge function checks the supplier catalog in bounded ca
   const config = await readFile('supabase/config.toml', 'utf8');
   assert.match(config, /\[functions\.quote-cj-shipping\][\s\S]*verify_jwt = true/);
 });
+
+test('product review edge function keeps approval behind verified identity and membership', async () => {
+  const source = await readFile('supabase/functions/review-product/index.ts', 'utf8');
+  await transform(source, {
+    loader: 'ts', format: 'esm', target: 'es2022',
+    sourcefile: 'supabase/functions/review-product/index.ts',
+  });
+  assert.match(source, /withSupabase\(\{ auth: 'user' \}/);
+  const identity = source.indexOf('ctx.userClaims?.id');
+  const membership = source.indexOf("rpc('is_internal_user')");
+  const write = source.indexOf("ctx.supabaseAdmin.rpc('review_product_candidate'");
+  assert.ok(identity > 0);
+  assert.ok(membership > identity);
+  assert.ok(write > membership);
+  assert.doesNotMatch(source, /SHOPIFY_CLIENT_SECRET|SUPABASE_SERVICE_ROLE_KEY/);
+
+  const browser = await readFile('src/browser/main.ts', 'utf8');
+  assert.match(browser, /functions\.invoke\('review-product'/);
+  assert.match(browser, /Approve for Shopify draft/);
+
+  const config = await readFile('supabase/config.toml', 'utf8');
+  assert.match(config, /\[functions\.review-product\][\s\S]*verify_jwt = true/);
+});

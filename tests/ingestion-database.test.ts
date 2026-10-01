@@ -31,6 +31,10 @@ async function migrate(db: PGlite) {
     'supabase/migrations/20261001000100_supplier_shipping_quotes.sql',
     'utf8',
   ));
+  await db.exec(await readFile(
+    'supabase/migrations/20261001000200_product_reviews.sql',
+    'utf8',
+  ));
 }
 
 async function ingest(
@@ -83,6 +87,11 @@ async function ingest(
 test('trusted supplier ingestion is atomic, idempotent, and retains raw history', async () => {
   const db = new PGlite();
   await migrate(db);
+  const reviewer = '00000000-0000-4000-8000-000000000099';
+  await db.exec(`
+    insert into auth.users(id) values ('${reviewer}');
+    insert into private.internal_users(user_id) values ('${reviewer}');
+  `);
   const initialVariants = [
     {
       external_variant_id: '1561984433677414400',
@@ -273,6 +282,71 @@ test('trusted supplier ingestion is atomic, idempotent, and retains raw history'
       where supplier_variant_id = $1::uuid and destination_country_code = 'DE'
     `, [quotedVariant.rows[0]!.id]);
     assert.deepEqual(promotedQuote.rows, [{ cost: '5.500000' }]);
+
+    const reviewVariants = JSON.stringify([{
+      supplier_variant_id: quotedVariant.rows[0]!.id,
+      selected: true,
+      retail_price: '19.99',
+    }]);
+    const reviewSql = `select * from public.review_product_candidate(
+      $1::uuid,'approve',$2,$3,'EUR','USD',0.90,10,array['NL'],$4,$5::jsonb,$6::uuid
+    )`;
+    await db.exec('begin');
+    try {
+      await db.exec('set local role authenticated');
+      await assert.rejects(db.query(reviewSql, [
+        first.candidate_id, 'Reviewed Catnip Balls', 'Store description',
+        'Ready for a Shopify draft.', reviewVariants, reviewer,
+      ]), /permission denied/);
+    } finally {
+      await db.exec('rollback');
+    }
+    await db.exec('begin');
+    try {
+      await db.exec('set local role service_role');
+      await assert.rejects(db.query(reviewSql.replace("array['NL']", "array['FR']"), [
+        first.candidate_id, 'Reviewed Catnip Balls', 'Store description',
+        'Ready for a Shopify draft.', reviewVariants, reviewer,
+      ]), /review_shipping_evidence_missing/);
+    } finally {
+      await db.exec('rollback');
+    }
+    await db.exec('begin');
+    try {
+      await db.exec('set local role service_role');
+      const approved = await db.query<{ candidate_status: string }>(reviewSql, [
+        first.candidate_id, 'Reviewed Catnip Balls', 'Store description',
+        'Ready for a Shopify draft.', reviewVariants, reviewer,
+      ]);
+      assert.equal(approved.rows[0]!.candidate_status, 'approved');
+      await db.exec('commit');
+    } catch (error) {
+      await db.exec('rollback');
+      throw error;
+    }
+    const reviewState = await db.query<{
+      status: string; title: string; events: number; variants: number;
+    }>(`
+      select candidate.status,review.title,
+        (select count(*)::int from public.product_review_events where review_id = review.id) as events,
+        (select count(*)::int from public.product_review_variants where review_id = review.id) as variants
+      from public.product_candidates as candidate
+      join public.product_reviews as review on review.candidate_id = candidate.id
+      where candidate.id = $1::uuid
+    `, [first.candidate_id]);
+    assert.deepEqual(reviewState.rows, [{
+      status: 'approved', title: 'Reviewed Catnip Balls', events: 1, variants: 1,
+    }]);
+    await db.exec('begin');
+    try {
+      await db.exec('set local role service_role');
+      await assert.rejects(
+        db.exec(`update public.product_review_events set note = 'rewritten'`),
+        /permission denied/,
+      );
+    } finally {
+      await db.exec('rollback');
+    }
 
     const duplicate = [initialVariants[0], initialVariants[0]];
     await assert.rejects(

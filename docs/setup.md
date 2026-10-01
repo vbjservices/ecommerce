@@ -91,9 +91,9 @@ npm run cj:import -- 1561984433618694144
 npm run cj:discover -- "cat toy" --profile=pets
 ```
 
-`cj:search` is the legacy read-only preview and does not persist results. `cj:discover` executes the budgeted V2 pipeline and atomically persists its run, query plan, ranked candidates, occurrences, normalized observations, shortlist image galleries, and private raw pages. Apply `20260930000200_discovery_runs.sql`, `20260930000300_product_image_galleries.sql`, and `20261001000100_supplier_shipping_quotes.sql` before using every dashboard feature. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product, image gallery, and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
+`cj:search` is the legacy read-only preview and does not persist results. `cj:discover` executes the budgeted V2 pipeline and atomically persists its run, query plan, ranked candidates, occurrences, normalized observations, shortlist image galleries, and private raw pages. Apply `20260930000200_discovery_runs.sql`, `20260930000300_product_image_galleries.sql`, `20261001000100_supplier_shipping_quotes.sql`, and `20261001000200_product_reviews.sql` before using every dashboard feature. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product, image gallery, and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
 
-The image-gallery and shipping-quote migrations are safe to retry in the SQL Editor. This matters when an earlier attempt created a helper function or table and then stopped: use the current complete file and run it again rather than deleting existing objects.
+The image-gallery, shipping-quote, and product-review migrations are safe to retry in the SQL Editor. This matters when an earlier attempt created a helper function or table and then stopped: use the current complete file and run it again rather than deleting existing objects.
 
 ### Deploy one-click product import
 
@@ -104,6 +104,7 @@ Deploy the committed function from the linked project:
 ```sh
 npx --yes supabase@2.117.0 functions deploy import-cj-product --use-api
 npx --yes supabase@2.117.0 functions deploy quote-cj-shipping --use-api
+npx --yes supabase@2.117.0 functions deploy review-product --use-api
 ```
 
 Keep JWT verification enabled. The functions check the signed-in user against `private.internal_users` through `is_internal_user()` before reading a candidate or invoking privileged writes. Test by scanning one Discovery card, importing it, and confirming that it leaves Discovery, appears in Imported products, and retains the checked shipping evidence.
@@ -111,6 +112,12 @@ Keep JWT verification enabled. The functions check the signed-in user against `p
 On a Discovery or imported card, **Start worldwide shipping scan** checks CJ's published 249-country destination catalog in batches of 8. High-value markets are checked first, then every remaining CJ country code. A rejected destination is left unchecked for a later retry while successful destinations in the same batch are saved. The dashboard separates confirmed, unavailable, and unchecked destinations, shows the confirmed cost range, and lists country-level carrier and delivery estimates. Continue the scan until no destinations remain unchecked.
 
 A pre-import batch uses one inventory call, one variant call, and up to 8 freight calls; at CJ's current point schedule that is up to 100 points. Once imported, the selected variant is already known, so a batch uses up to 90 points. Quotes replace the current normalized value while raw CJ responses remain private history. Recheck before approval because freight prices and routes change.
+
+### Review pricing and approve a product
+
+Open **Product review and pricing** on an imported card. Choose only confirmed European markets, select the variants to sell, enter their EUR prices, and record the current source-cost-to-EUR exchange rate. The variable cost reserve can represent payment fees, VAT, advertising, returns, and other percentage-based costs. Landed cost uses the highest selected-market one-unit quote from the scanned representative variant; materially different variants still need verification before publishing. Gross and contribution estimates use exact fixed-point decimal arithmetic.
+
+**Save review** keeps a draft in `ready_for_review`. **Approve for Shopify draft** requires a current supplier cost for every selected variant, confirmed shipping evidence for every selected market, an exchange rate when currencies differ, and at least one priced variant. **Reject product** requires a note. Every action appends an audit event. Approval does not create or publish a Shopify product.
 
 ## 6. Prepare the Shopify channel
 

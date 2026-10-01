@@ -72,6 +72,7 @@ test('repository does not convert failed or malformed reads into a valid empty w
     created_at: '2026-09-29T10:00:00Z',
     products: {
       title: 'Candidate',
+      description: 'Description',
       image_url: 'https://cf.cjdropshipping.com/product/candidate.jpg',
       image_urls: [
         'https://cf.cjdropshipping.com/product/candidate.jpg',
@@ -85,14 +86,34 @@ test('repository does not convert failed or malformed reads into a valid empty w
       suppliers: { name: 'Supplier' },
       supplier_variants: [{
         id: '00000000-0000-4000-8000-000000000011',
+        external_variant_id: 'variant-1',
+        product_variant_id: '00000000-0000-4000-8000-000000000012',
         cost: 3.16, currency: 'USD', stock: 10,
+        product_variants: { sku: 'SKU-1', options: { Color: 'Green' } },
       }],
     },
+  };
+  const review = {
+    id: '00000000-0000-4000-8000-000000000013',
+    candidate_id: row.id,
+    title: 'Reviewed candidate', description: 'Store copy',
+    retail_currency: 'EUR', cost_currency: 'USD', cost_to_retail_fx_rate: '0.90',
+    cost_reserve_percent: '10', target_market_codes: ['NL'], notes: null,
+    updated_at: '2026-10-01T10:00:00Z',
+    product_review_variants: [{
+      supplier_variant_id: row.supplier_products.supplier_variants[0]!.id,
+      selected: true, retail_price: '19.99',
+    }],
+    product_review_events: [{
+      event_type: 'saved' as const, note: null, created_at: '2026-10-01T10:00:00Z',
+    }],
   };
   const rowClient = {
     from: (table: string) => table === 'product_candidates'
       ? { select: () => ({ order: () => ({ limit: async () => ({ data: [row], error: null }) }) }) }
-      : { select: () => ({ in: async () => ({ data: [], error: null }) }) },
+      : { select: () => ({ in: async () => ({
+        data: table === 'product_reviews' ? [review] : [], error: null,
+      }) }) },
   } as unknown as SupabaseClient;
   assert.deepEqual(await readRecentCandidates(rowClient), [{
     ...row,
@@ -102,6 +123,7 @@ test('repository does not convert failed or malformed reads into a valid empty w
         ...variant, shipping_quotes: [],
       })),
     },
+    review,
   }]);
 });
 
@@ -111,7 +133,7 @@ test('repository stays readable during the additive product image migration', as
     id: '00000000-0000-4000-8000-000000000010',
     status: 'discovered',
     created_at: '2026-09-29T10:00:00Z',
-    products: { title: 'Candidate' },
+    products: { title: 'Candidate', description: null },
     supplier_products: {
       external_product_id: 'supplier-product', source_url: null,
       last_seen_at: '2026-09-29T10:00:00Z', suppliers: { name: 'Supplier' },
@@ -119,15 +141,17 @@ test('repository stays readable during the additive product image migration', as
     },
   };
   const client = {
-    from: () => ({ select: () => ({ order: () => ({ limit: async () => {
-      calls++;
-      return calls < 3
-        ? { data: null, error: { code: '42703' } }
-        : { data: [row], error: null };
-    } }) }) }),
+    from: (table: string) => table === 'product_candidates'
+      ? { select: () => ({ order: () => ({ limit: async () => {
+        calls++;
+        return calls < 3
+          ? { data: null, error: { code: '42703' } }
+          : { data: [row], error: null };
+      } }) }) }
+      : { select: () => ({ in: async () => ({ data: [], error: null }) }) },
   } as unknown as SupabaseClient;
   assert.deepEqual(await readRecentCandidates(client), [{
-    ...row, products: { ...row.products, image_url: null, image_urls: [] },
+    ...row, products: { ...row.products, image_url: null, image_urls: [] }, review: null,
   }]);
   assert.equal(calls, 3);
 });

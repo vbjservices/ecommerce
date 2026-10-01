@@ -4,9 +4,15 @@ import { candidateStatuses } from '../domain/candidates';
 
 const supplierVariantSummary = z.object({
   id: z.uuid(),
+  external_variant_id: z.string(),
+  product_variant_id: z.uuid(),
   cost: z.union([z.number().nonnegative(), z.string()]).nullable(),
   currency: z.string().nullable(),
   stock: z.number().int().nonnegative().nullable(),
+  product_variants: z.object({
+    sku: z.string().nullable(),
+    options: z.record(z.string(), z.string()),
+  }),
 });
 
 const shippingQuoteSummary = z.object({
@@ -32,6 +38,7 @@ const candidateBaseSummary = z.object({
   id: z.uuid(), status: z.enum(candidateStatuses), created_at: z.string(),
   products: z.object({
     title: z.string(),
+    description: z.string().nullable(),
     image_url: z.string().nullable(),
     image_urls: z.array(z.string()),
   }),
@@ -43,12 +50,36 @@ const candidateBaseSummary = z.object({
     supplier_variants: z.array(supplierVariantSummary),
   }),
 });
+const reviewSummary = z.object({
+  id: z.uuid(),
+  candidate_id: z.uuid(),
+  title: z.string(),
+  description: z.string().nullable(),
+  retail_currency: z.string().regex(/^[A-Z]{3}$/),
+  cost_currency: z.string().regex(/^[A-Z]{3}$/),
+  cost_to_retail_fx_rate: z.union([z.number().positive(), z.string()]).nullable(),
+  cost_reserve_percent: z.union([z.number().nonnegative(), z.string()]),
+  target_market_codes: z.array(z.string().regex(/^[A-Z]{2}$/)),
+  notes: z.string().nullable(),
+  updated_at: z.string(),
+  product_review_variants: z.array(z.object({
+    supplier_variant_id: z.uuid(),
+    selected: z.boolean(),
+    retail_price: z.union([z.number().positive(), z.string()]).nullable(),
+  })),
+  product_review_events: z.array(z.object({
+    event_type: z.enum(['saved', 'approved', 'rejected']),
+    note: z.string().nullable(),
+    created_at: z.string(),
+  })),
+});
 const candidateSummary = candidateBaseSummary.extend({
   supplier_products: candidateBaseSummary.shape.supplier_products.extend({
     supplier_variants: z.array(supplierVariantSummary.extend({
       shipping_quotes: z.array(shippingQuoteSummary),
     })),
   }),
+  review: reviewSummary.nullable(),
 });
 export type CandidateSummary = z.infer<typeof candidateSummary>;
 
@@ -101,9 +132,10 @@ export type DiscoveryCandidateSummary = z.infer<typeof discoveryCandidateSummary
 /** A narrow, RLS-protected read model; no raw payloads or browser workflow writes. */
 export async function readRecentCandidates(client: SupabaseClient): Promise<CandidateSummary[]> {
   const result = await client.from('product_candidates')
-    .select(`id,status,created_at,products!inner(title,image_url,image_urls),supplier_products!inner(
+    .select(`id,status,created_at,products!inner(title,description,image_url,image_urls),supplier_products!inner(
       external_product_id,source_url,last_seen_at,suppliers!inner(name),
-      supplier_variants(id,cost,currency,stock)
+      supplier_variants(id,external_variant_id,product_variant_id,cost,currency,stock,
+        product_variants!inner(sku,options))
     )`)
     .order('created_at', { ascending: false }).limit(20);
   // Keep Pages usable while either additive image migration is being applied.
@@ -111,9 +143,10 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
   let error = result.error;
   if (error?.code === '42703' || error?.code === 'PGRST204') {
     const primaryOnly = await client.from('product_candidates')
-      .select(`id,status,created_at,products!inner(title,image_url),supplier_products!inner(
+      .select(`id,status,created_at,products!inner(title,description,image_url),supplier_products!inner(
         external_product_id,source_url,last_seen_at,suppliers!inner(name),
-        supplier_variants(id,cost,currency,stock)
+        supplier_variants(id,external_variant_id,product_variant_id,cost,currency,stock,
+          product_variants!inner(sku,options))
       )`)
       .order('created_at', { ascending: false }).limit(20);
     const primaryData = primaryOnly.data as unknown as Array<Record<string, unknown>> | null;
@@ -128,9 +161,10 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
     }) ?? null;
     if (error?.code === '42703' || error?.code === 'PGRST204') {
       const legacy = await client.from('product_candidates')
-        .select(`id,status,created_at,products!inner(title),supplier_products!inner(
+        .select(`id,status,created_at,products!inner(title,description),supplier_products!inner(
           external_product_id,source_url,last_seen_at,suppliers!inner(name),
-          supplier_variants(id,cost,currency,stock)
+          supplier_variants(id,external_variant_id,product_variant_id,cost,currency,stock,
+            product_variants!inner(sku,options))
         )`)
         .order('created_at', { ascending: false }).limit(20);
       const legacyData = legacy.data as unknown as Array<Record<string, unknown>> | null;
@@ -167,6 +201,24 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
     current.push(quote);
     byVariant.set(quote.supplier_variant_id, current);
   }
+  let reviews: z.infer<typeof reviewSummary>[] = [];
+  if (base.data.length) {
+    const reviewResult = await client.from('product_reviews')
+      .select(`id,candidate_id,title,description,retail_currency,cost_currency,
+        cost_to_retail_fx_rate,cost_reserve_percent,target_market_codes,notes,updated_at,
+        product_review_variants(supplier_variant_id,selected,retail_price),
+        product_review_events(event_type,note,created_at)`)
+      .in('candidate_id', base.data.map((candidate) => candidate.id));
+    if (reviewResult.error && !['42P01', 'PGRST205'].includes(reviewResult.error.code)) {
+      throw new Error('Product reviews could not be loaded. Please try again.');
+    }
+    if (!reviewResult.error) {
+      const parsedReviews = z.array(reviewSummary).safeParse(reviewResult.data);
+      if (!parsedReviews.success) throw new Error('Product review data is not in the expected format.');
+      reviews = parsedReviews.data;
+    }
+  }
+  const reviewsByCandidate = new Map(reviews.map((review) => [review.candidate_id, review]));
   const enriched = base.data.map((candidate) => ({
     ...candidate,
     supplier_products: {
@@ -176,6 +228,7 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
         shipping_quotes: byVariant.get(variant.id) ?? [],
       })),
     },
+    review: reviewsByCandidate.get(candidate.id) ?? null,
   }));
   return z.array(candidateSummary).parse(enriched);
 }
