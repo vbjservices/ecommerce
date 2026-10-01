@@ -4,7 +4,7 @@ import { createBrowserDatabase } from './supabase';
 import { checkAccess } from './auth';
 import { readRecentCandidates, readRecentDiscoveryCandidates } from './workspace-repository';
 import { isWorkspaceSnapshotFresh, type WorkspaceSnapshot } from './workspace-cache';
-import { NOT_CHECKED_SHIPPING, shippingAvailabilityLabel } from '../domain/shipping';
+import { NOT_CHECKED_SHIPPING, shippingMarketStatusLabel } from '../domain/shipping';
 
 const app = document.querySelector<HTMLElement>('#app')!;
 const carouselTimers = new Set<number>();
@@ -294,7 +294,7 @@ async function start() {
         metric('CJ listings', count(observation?.listing_count)),
         metric('Delivery estimate', deliveryWindow(candidate)),
         metric('Variants', 'After import'),
-        metric('Shipping', shippingAvailabilityLabel(NOT_CHECKED_SHIPPING)),
+        metric('Shipping', shippingMarketStatusLabel(NOT_CHECKED_SHIPPING)),
       );
       const details = document.createElement('details');
       const summary = document.createElement('summary');
@@ -449,7 +449,7 @@ async function start() {
           metric('Last checked', new Intl.DateTimeFormat(undefined, {
             dateStyle: 'medium', timeStyle: 'short',
           }).format(new Date(candidate.supplier_products.last_seen_at))),
-          metric('Shipping', shippingAvailabilityLabel(NOT_CHECKED_SHIPPING)),
+          metric('Shipping', shippingMarketStatusLabel(NOT_CHECKED_SHIPPING)),
         );
 
         const sourceUrl = safeSourceUrl(candidate.supplier_products.source_url);

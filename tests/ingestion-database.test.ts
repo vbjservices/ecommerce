@@ -21,6 +21,12 @@ async function migrate(db: PGlite) {
   for (const file of (await readdir('supabase/migrations')).sort()) {
     await db.exec(await readFile(`supabase/migrations/${file}`, 'utf8'));
   }
+  // The gallery migration is also distributed for SQL Editor use, where a previous
+  // attempt can leave the first helper function behind. A retry must be harmless.
+  await db.exec(await readFile(
+    'supabase/migrations/20260930000300_product_image_galleries.sql',
+    'utf8',
+  ));
 }
 
 async function ingest(

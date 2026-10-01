@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { NOT_CHECKED_SHIPPING, shippingAvailabilityLabel } from '../src/domain/shipping';
+import {
+  INITIAL_SHIPPING_MARKET,
+  NOT_CHECKED_SHIPPING,
+  shippingAvailabilityLabel,
+  shippingMarketStatusLabel,
+} from '../src/domain/shipping';
 
 test('shipping labels distinguish unknown, worldwide, regional, limited, and unavailable states', () => {
   assert.equal(shippingAvailabilityLabel(NOT_CHECKED_SHIPPING), 'Not checked');
@@ -16,4 +21,9 @@ test('shipping labels distinguish unknown, worldwide, regional, limited, and una
   assert.equal(shippingAvailabilityLabel({
     scope: 'unavailable', regions: [], checkedAt: '2026-09-30T12:00:00Z', source: 'quote-test',
   }), 'Unavailable');
+});
+
+test('Europe is the explicit initial shipping market', () => {
+  assert.equal(INITIAL_SHIPPING_MARKET.id, 'europe');
+  assert.equal(shippingMarketStatusLabel(NOT_CHECKED_SHIPPING), 'Europe · Not checked');
 });

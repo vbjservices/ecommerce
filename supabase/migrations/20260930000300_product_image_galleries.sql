@@ -1,6 +1,6 @@
 -- Retain normalized supplier image galleries for imported and discovered products.
 -- Raw provider payloads stay private; browser roles only read validated HTTPS URLs.
-create function private.normalize_image_urls(p_urls text[])
+create or replace function private.normalize_image_urls(p_urls text[])
 returns text[]
 language sql
 immutable
@@ -20,7 +20,7 @@ as $$
   ) as candidate
 $$;
 
-create function private.image_urls_are_safe(p_urls text[])
+create or replace function private.image_urls_are_safe(p_urls text[])
 returns boolean
 language sql
 immutable
@@ -35,14 +35,35 @@ as $$
 $$;
 
 alter table public.products
-  add column image_urls text[] not null default '{}',
-  add constraint products_image_urls_safe check (private.image_urls_are_safe(image_urls));
+  add column if not exists image_urls text[] not null default '{}';
 
 alter table public.discovery_candidates
-  add column image_urls text[] not null default '{}',
-  add constraint discovery_candidates_image_urls_safe check (private.image_urls_are_safe(image_urls));
+  add column if not exists image_urls text[] not null default '{}';
 
-create function private.keep_primary_image_in_gallery()
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'products_image_urls_safe'
+      and conrelid = 'public.products'::regclass
+  ) then
+    alter table public.products
+      add constraint products_image_urls_safe
+      check (private.image_urls_are_safe(image_urls));
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'discovery_candidates_image_urls_safe'
+      and conrelid = 'public.discovery_candidates'::regclass
+  ) then
+    alter table public.discovery_candidates
+      add constraint discovery_candidates_image_urls_safe
+      check (private.image_urls_are_safe(image_urls));
+  end if;
+end;
+$$;
+
+create or replace function private.keep_primary_image_in_gallery()
 returns trigger
 language plpgsql
 security definer
@@ -58,10 +79,12 @@ begin
 end;
 $$;
 
+drop trigger if exists keep_primary_product_image on public.products;
 create trigger keep_primary_product_image
 before insert or update of image_url, image_urls on public.products
 for each row execute function private.keep_primary_image_in_gallery();
 
+drop trigger if exists keep_primary_discovery_image on public.discovery_candidates;
 create trigger keep_primary_discovery_image
 before insert or update of image_url, image_urls on public.discovery_candidates
 for each row execute function private.keep_primary_image_in_gallery();
@@ -74,7 +97,7 @@ update public.discovery_candidates
 set image_urls = array[image_url]
 where image_url is not null;
 
-create function private.apply_supplier_snapshot_images(
+create or replace function private.apply_supplier_snapshot_images(
   p_supplier_product_id uuid,
   p_raw_payload jsonb
 ) returns void
@@ -106,7 +129,7 @@ begin
 end;
 $$;
 
-create function private.sync_supplier_snapshot_images()
+create or replace function private.sync_supplier_snapshot_images()
 returns trigger
 language plpgsql
 security definer
@@ -118,6 +141,7 @@ begin
 end;
 $$;
 
+drop trigger if exists sync_supplier_snapshot_images on private.supplier_snapshots;
 create trigger sync_supplier_snapshot_images
 after insert on private.supplier_snapshots
 for each row execute function private.sync_supplier_snapshot_images();
@@ -139,7 +163,7 @@ begin
 end;
 $$;
 
-create function private.apply_discovery_observation_images(
+create or replace function private.apply_discovery_observation_images(
   p_candidate_id uuid,
   p_snapshot jsonb
 ) returns void
@@ -169,7 +193,7 @@ begin
 end;
 $$;
 
-create function private.sync_discovery_observation_images()
+create or replace function private.sync_discovery_observation_images()
 returns trigger
 language plpgsql
 security definer
@@ -181,6 +205,7 @@ begin
 end;
 $$;
 
+drop trigger if exists sync_discovery_observation_images on public.supplier_product_observations;
 create trigger sync_discovery_observation_images
 after insert on public.supplier_product_observations
 for each row execute function private.sync_discovery_observation_images();

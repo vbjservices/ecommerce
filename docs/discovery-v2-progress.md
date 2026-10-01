@@ -47,7 +47,7 @@ npm run cj:discover -- "cat toy" --profile=pets --refresh
 
 The configuration version is now `discovery-v2.1`, so the first command after deployment also bypasses older cached run keys without `--refresh`. Reimport an existing product to refresh its imported-product gallery if its historical raw snapshot did not contain `productImageSet`.
 
-Set the Edge Function secret `CJ_API_KEY` and deploy `import-cj-product` before using the dashboard import button. Shipping remains `Not checked` until a later freight workflow records destination-specific evidence.
+Set the Edge Function secret `CJ_API_KEY` and deploy `import-cj-product` before using the dashboard import button. Europe is the initial shipping market. Its status remains `Not checked` until a later freight workflow records destination-specific evidence.
 
 ## Next discovery work
 

@@ -112,7 +112,7 @@ The dashboard separates searched products under **Discovery** from persisted cat
 
 An authenticated **Import product** action invokes the `import-cj-product` Edge Function. The function verifies the user JWT and active internal membership, keeps the CJ and Supabase secret keys server-side, retrieves the complete product/variant/inventory snapshot, and uses the existing atomic ingestion RPC. A successful import immediately appears in the Imported products lane; repeat imports refresh the existing mapping.
 
-Both lanes currently show shipping as **Not checked**. CJ's product-level free-shipping marker does not prove destination coverage. Worldwide, region-limited, and unavailable states require timestamped freight checks for configured destination countries and representative variants before they can be claimed.
+Both lanes currently show **Europe · Not checked**. Europe is the selected initial market, but the label is a target rather than an availability claim. CJ's product-level free-shipping marker does not prove destination coverage. Worldwide, region-limited, and unavailable states require timestamped freight checks for configured destination countries and representative variants before they can be claimed.
 
 ## Current limits and next work
 
@@ -120,4 +120,4 @@ CJ listing activity is not verified sales. CJ Trending is not proof of market de
 
 This slice does not schedule recurring runs, request destination shipping quotes, calculate landed cost, scrape market sources, publish products, maintain listings, purchase inventory, fulfill orders, or integrate with the external orchestrator.
 
-The next discovery work should use real persisted runs to calibrate thresholds and scoring, add variant-quality enrichment for the strongest candidates, and improve the dashboard's run-level filtering. Market validation and Netherlands shipping/economics remain later workflows with their own evidence sources.
+The next discovery work should use real persisted runs to calibrate thresholds and scoring, add variant-quality enrichment for the strongest candidates, and improve the dashboard's run-level filtering. Market validation and Europe shipping/economics remain later workflows with their own evidence sources.

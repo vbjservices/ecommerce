@@ -12,6 +12,12 @@ export interface ShippingAvailability {
   source: string | null;
 }
 
+// The first commercial market. Availability still requires destination-specific quotes.
+export const INITIAL_SHIPPING_MARKET = {
+  id: 'europe',
+  label: 'Europe',
+} as const;
+
 export const NOT_CHECKED_SHIPPING: ShippingAvailability = {
   scope: 'not_checked',
   regions: [],
@@ -25,4 +31,11 @@ export function shippingAvailabilityLabel(availability: ShippingAvailability) {
   if (availability.scope === 'unavailable') return 'Unavailable';
   const regions = availability.regions.length ? `: ${availability.regions.join(', ')}` : '';
   return availability.scope === 'regional' ? `Regional${regions}` : `Limited${regions}`;
+}
+
+export function shippingMarketStatusLabel(
+  availability: ShippingAvailability,
+  market = INITIAL_SHIPPING_MARKET,
+) {
+  return `${market.label} · ${shippingAvailabilityLabel(availability)}`;
 }

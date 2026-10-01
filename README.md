@@ -2,7 +2,7 @@
 
 A small internal ecommerce foundation: a static dashboard on GitHub Pages, Supabase PostgreSQL/Auth for persistent state and access, and TypeScript boundaries for future server-side integrations.
 
-CJ is the first supplier integration. Shopify is the first planned sales channel. Neither defines our products, candidates, or orders.
+CJ is the first supplier integration. Shopify is the selected first sales channel, with Europe as the initial shipping market. Neither defines our products, candidates, or orders.
 
 ## Run
 
@@ -64,4 +64,4 @@ Implemented: sign-in/out and session checks, explicit internal membership, five-
 
 Deferred: scheduling, external research/scraping adapters, destination shipping quotes, landed-cost economics, approval writes/audit workflow, listing persistence, order persistence, webhooks, queues, purchasing, fulfillment, maintenance, and tracking. There is no public signup or multi-tenant system.
 
-Next: calibrate Discovery V2 with real runs and operator feedback, then add shortlist enrichment and Netherlands shipping quotes before human review.
+Next: calibrate Discovery V2 with real runs and operator feedback, then add destination-specific Europe shipping quotes before human review and Shopify publishing.

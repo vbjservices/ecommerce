@@ -57,6 +57,8 @@ Copy `.env.example` to the ignored `.env.local`. Set:
 
 Leave server-only fields empty when working only on the dashboard. Public configuration is intentionally visible in browser JavaScript. Never put privileged credentials in any `PUBLIC_` variable. The build exposes exactly the two named public variables and rejects privileged key formats in the public key field. `.env.example` must remain names with empty assignments.
 
+The Supabase Edge Function reads `CJ_API_KEY` from Edge Function Secrets. The local `.env` value is separate: keep it only if you use `npm run cj:search`, `npm run cj:import`, or `npm run cj:discover` from this computer. The dashboard import button does not read the local value.
+
 ```sh
 npm ci
 npm run dev
@@ -91,6 +93,8 @@ npm run cj:discover -- "cat toy" --profile=pets
 
 `cj:search` is the legacy read-only preview and does not persist results. `cj:discover` executes the budgeted V2 pipeline and atomically persists its run, query plan, ranked candidates, occurrences, normalized observations, shortlist image galleries, and private raw pages. Apply `20260930000200_discovery_runs.sql` and `20260930000300_product_image_galleries.sql` before using it. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product, image gallery, and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
 
+The image-gallery migration is safe to retry in the SQL Editor. This matters when an earlier attempt created `private.normalize_image_urls` and then stopped: use the current complete file and run it again rather than deleting the existing helper function.
+
 ### Deploy one-click product import
 
 The dashboard's **Import product** action calls the authenticated `import-cj-product` Supabase Edge Function. In **Edge Functions → Secrets**, add `CJ_API_KEY` with the same private CJ API key used by the CLI. Supabase injects its own URL and secret keys; do not create browser variables for them.
@@ -103,7 +107,15 @@ npx --yes supabase@2.117.0 functions deploy import-cj-product --use-api
 
 Keep JWT verification enabled. The function checks the signed-in user against `private.internal_users` through `is_internal_user()` before reading a discovery candidate or invoking privileged ingestion. Test by importing one Discovery card and confirming that it changes to **Imported** and appears in the Imported products tab.
 
-## 6. Publish using the existing Pages setting
+## 6. Prepare the Shopify channel
+
+Shopify is the selected first channel and Europe is the initial shipping market. Channel publishing is not active yet, so do not put Shopify credentials in browser variables or GitHub Pages.
+
+Create the app in Shopify's Dev Dashboard, choose custom distribution to your store, request only `write_products` for the first product-publishing slice, release the app version, and install it on the store. Keep the Client secret in a server-side secret store. Record the store's permanent `*.myshopify.com` domain; a custom storefront domain can change and is not the Admin API identity.
+
+The next channel slice will exchange the Client ID and Client secret for a short-lived server token, publish an approved imported product through Shopify's GraphQL Admin API, and persist the Shopify product/variant IDs for idempotent updates. Shipping quotes and landed cost will be validated for Europe before a product can be approved for publishing.
+
+## 7. Publish using the existing Pages setting
 
 Keep **Settings → Pages → Deploy from a branch → main → / (root)**. GitHub Pages serves the generated `index.html` and `assets/`; it does not run Node, migrations, or server modules.
 
@@ -129,3 +141,5 @@ GitHub Pages may take a few minutes to refresh after a push. No server secrets, 
 - [Supabase Auth settings](https://supabase.com/docs/guides/auth/general-configuration)
 - [Vite public environment handling](https://vite.dev/guide/env-and-mode)
 - [GitHub Pages branch publication](https://docs.github.com/en/pages/getting-started-with-github-pages/creating-a-github-pages-site)
+- [Shopify Dev Dashboard apps](https://shopify.dev/docs/apps/build/dev-dashboard/create-apps-using-dev-dashboard)
+- [Shopify client credentials grant](https://shopify.dev/docs/apps/build/authentication-authorization/client-credentials-grant)
