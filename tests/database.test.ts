@@ -62,6 +62,46 @@ test('migrations enforce authorization and domain integrity in PostgreSQL', asyn
       assert.deepEqual((await asRole('authenticated', member, 'select * from public.products')).rows, []);
       await db.exec(`update private.internal_users set active=true where user_id='${member}'`);
     });
+    await t.test('Shopify OAuth state is single-use and only encrypted credentials reach private storage', async () => {
+      const stateHash = 'a'.repeat(64);
+      await assert.rejects(asRole('authenticated', member, `
+        select public.create_shopify_oauth_state(
+          '${stateHash}','petvia.myshopify.com','${member}'
+        )
+      `), /permission denied/);
+      await db.exec('begin');
+      try {
+        await db.exec('set local role service_role');
+        await db.query(`select public.create_shopify_oauth_state($1,$2,$3::uuid)`, [
+          stateHash, 'petvia.myshopify.com', member,
+        ]);
+        const consumed = await db.query<{ actor_id: string }>(
+          `select * from public.consume_shopify_oauth_state($1,$2)`,
+          [stateHash, 'petvia.myshopify.com'],
+        );
+        assert.equal(consumed.rows[0]!.actor_id, member);
+        assert.equal((await db.query(
+          `select * from public.consume_shopify_oauth_state($1,$2)`,
+          [stateHash, 'petvia.myshopify.com'],
+        )).rows.length, 0);
+        const connected = await db.query<{ connect_shopify_channel: string }>(`
+          select public.connect_shopify_channel($1,$2,$3,$4::text[],$5::uuid)
+        `, [
+          'petvia.myshopify.com', 'encrypted-token-value', 'abcdefghijklmnop',
+          ['write_products'], member,
+        ]);
+        const channelId = connected.rows[0]!.connect_shopify_channel;
+        const credential = await db.query<{
+          shop_domain: string; access_token_ciphertext: string; granted_scopes: string[];
+        }>(`select shop_domain,access_token_ciphertext,granted_scopes
+          from public.get_shopify_connection($1::uuid,$2::uuid)`, [channelId, member]);
+        assert.deepEqual(credential.rows, [{
+          shop_domain: 'petvia.myshopify.com',
+          access_token_ciphertext: 'encrypted-token-value',
+          granted_scopes: ['write_products'],
+        }]);
+      } finally { await db.exec('rollback'); }
+    });
     await t.test('trusted service role can write; raw observations are append-only for that role', async () => {
       assert.equal((await asRole('service_role', '', "insert into public.products(title) values ('Worker product') returning id")).rows.length, 1);
       await assert.rejects(asRole('service_role', '', 'delete from private.supplier_snapshots'), /permission denied/);

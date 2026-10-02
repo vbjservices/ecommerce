@@ -253,6 +253,7 @@ test('workspace cache is page-memory only and expires after five minutes', () =>
     access: { status: 'authorized', userId: '00000000-0000-4000-8000-000000000001', email: 'test@example.com' },
     candidates: [],
     discoveryCandidates: [],
+    salesChannels: [],
     fetchedAt,
   };
   assert.equal(isWorkspaceSnapshotFresh(snapshot, fetchedAt), true);

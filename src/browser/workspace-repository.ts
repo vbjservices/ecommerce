@@ -85,6 +85,7 @@ const channelListingSummary = z.object({
   last_attempted_at: z.string().nullable(),
   synced_at: z.string().nullable(),
   sales_channels: z.object({
+    id: z.uuid(),
     provider: z.string(),
     name: z.string(),
     external_account_id: z.string().nullable(),
@@ -104,6 +105,16 @@ const candidateSummary = candidateBaseSummary.extend({
   listings: z.array(channelListingSummary),
 });
 export type CandidateSummary = z.infer<typeof candidateSummary>;
+
+const salesChannelSummary = z.object({
+  id: z.uuid(),
+  provider: z.string(),
+  name: z.string(),
+  external_account_id: z.string().nullable(),
+  connection_status: z.enum(['connected', 'disconnected', 'error']),
+  connected_at: z.string().nullable(),
+});
+export type SalesChannelSummary = z.infer<typeof salesChannelSummary>;
 
 const discoveryCandidateBaseSummary = z.object({
   id: z.uuid(),
@@ -246,7 +257,7 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
     const listingResult = await client.from('channel_listings')
       .select(`id,candidate_id,status,external_listing_id,external_handle,source_review_updated_at,
         attempt_count,last_error_code,last_attempted_at,synced_at,
-        sales_channels!inner(provider,name,external_account_id),
+        sales_channels!inner(id,provider,name,external_account_id),
         channel_listing_variants(product_variant_id,external_variant_id)`)
       .in('candidate_id', base.data.map((candidate) => candidate.id));
     if (listingResult.error && !['42P01', '42703', 'PGRST204', 'PGRST205'].includes(listingResult.error.code)) {
@@ -277,6 +288,18 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
     listings: listingsByCandidate.get(candidate.id) ?? [],
   }));
   return z.array(candidateSummary).parse(enriched);
+}
+
+/** Connected channel metadata is safe for internal browser users; credentials stay private. */
+export async function readSalesChannels(client: SupabaseClient): Promise<SalesChannelSummary[]> {
+  const result = await client.from('sales_channels')
+    .select('id,provider,name,external_account_id,connection_status,connected_at')
+    .order('connected_at', { ascending: false, nullsFirst: false });
+  if (result.error?.code === '42703' || result.error?.code === 'PGRST204') return [];
+  if (result.error) throw new Error('Sales channels could not be loaded. Please try again.');
+  const parsed = z.array(salesChannelSummary).safeParse(result.data);
+  if (!parsed.success) throw new Error('Sales channel data is not in the expected format.');
+  return parsed.data;
 }
 
 /** V2 discovery results are optional during the additive schema rollout. */

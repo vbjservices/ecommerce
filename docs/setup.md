@@ -52,9 +52,10 @@ Copy `.env.example` to the ignored `.env.local`. Set:
 | `SUPABASE_URL` | Same project URL, only needed for trusted server tools |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server secret or legacy service-role key, only for trusted tools |
 | `CJ_API_KEY` | CJ API key, only needed for trusted CJ ingestion and discovery |
-| `SHOPIFY_STORE_DOMAIN` | Permanent `store-name.myshopify.com` domain; used only by the Shopify Edge Function |
 | `SHOPIFY_CLIENT_ID` | Shopify Dev Dashboard app client ID; server-only |
 | `SHOPIFY_CLIENT_SECRET` | Shopify Dev Dashboard app client secret; server-only |
+| `SHOPIFY_TOKEN_ENCRYPTION_KEY` | 32-byte base64url key used by Edge Functions to encrypt the installed-store token |
+| `SHOPIFY_DASHBOARD_URL` | Optional dashboard return URL after Shopify approval |
 | `OLLAMA_BASE_URL` | Optional Ollama HTTP(S) origin for query expansion, such as `http://127.0.0.1:11434` |
 | `OLLAMA_MODEL` | Optional local model name; configure together with `OLLAMA_BASE_URL` |
 
@@ -108,6 +109,8 @@ Deploy the committed function from the linked project:
 npx --yes supabase@2.117.0 functions deploy import-cj-product --use-api
 npx --yes supabase@2.117.0 functions deploy quote-cj-shipping --use-api
 npx --yes supabase@2.117.0 functions deploy review-product --use-api
+npx --yes supabase@2.117.0 functions deploy start-shopify-connection --use-api
+npx --yes supabase@2.117.0 functions deploy shopify-oauth-callback --no-verify-jwt --use-api
 npx --yes supabase@2.117.0 functions deploy publish-shopify-draft --use-api
 ```
 
@@ -125,25 +128,48 @@ Open **Product review and pricing** on an imported card. Choose only confirmed E
 
 ## 6. Configure Shopify draft creation
 
-Shopify is the selected first channel. Apply `20261001000300_shopify_draft_listings.sql` before deploying the draft function. The migration adds durable listing intent, explicit product/variant mappings, restricted attempt history, and read-only dashboard status.
+Shopify is the selected first channel. Apply `20261001000300_shopify_draft_listings.sql` and `20261002000100_shopify_oauth_connections.sql` before deploying the functions. The migrations add durable listing intent, explicit product/variant mappings, restricted attempt history, single-use OAuth state, encrypted credential storage, and read-only connection status.
 
-Create the app in Shopify's Dev Dashboard, choose custom distribution to your store, request only `write_products` for the first product-publishing slice, release the app version, and install it on the store. Keep the Client secret in a server-side secret store. Record the store's permanent `*.myshopify.com` domain; a custom storefront domain can change and is not the Admin API identity.
+The store appearing in Shopify's account switcher does not mean it belongs to the same Dev Dashboard organization as the app. Do not use **Create store** to connect an existing live shop; that creates a separate development store. For an existing store outside the Dev Dashboard organization, use a custom-distribution standalone app and the authorization-code flow:
+
+1. In Shopify Dev Dashboard, select **Apps -> Create app**. Use a clear internal name such as `Petvia Product Publisher`.
+2. Set the app URL to `https://vbjservices.github.io/ecommerce/`.
+3. Add this exact allowed redirect URL, replacing the project reference only if the Supabase project changes:
+
+   ```text
+   https://gwteaavfssymdjdpunkc.supabase.co/functions/v1/shopify-oauth-callback
+   ```
+
+4. In the app version, request only `write_products`, then release the version.
+5. In the app's Distribution card, select **Custom distribution**. Enter the existing store's permanent `*.myshopify.com` domain and generate its custom install link. Distribution cannot be changed later, so select Custom for this single-store integration.
+6. Copy the app's Client ID and Client secret. Keep the secret server-side.
+
+Generate a separate 32-byte token-encryption key locally. Copy only the output into Supabase secrets; do not commit it:
+
+```sh
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
 
 In **Supabase Dashboard -> Edge Functions -> Secrets**, add:
 
 ```text
-SHOPIFY_STORE_DOMAIN=store-name.myshopify.com
 SHOPIFY_CLIENT_ID=...
 SHOPIFY_CLIENT_SECRET=...
+SHOPIFY_TOKEN_ENCRYPTION_KEY=the-generated-base64url-value
+SHOPIFY_DASHBOARD_URL=https://vbjservices.github.io/ecommerce/
 ```
 
-Do not add a custom storefront domain, URL scheme, path, or trailing slash. These values can remain empty in local `.env` files because the dashboard calls the deployed Edge Function. Deploy it from the linked project:
+These values can remain empty in local `.env` files because the dashboard calls deployed Edge Functions. Deploy all three functions from the linked project:
 
 ```sh
+npx --yes supabase@2.117.0 functions deploy start-shopify-connection --use-api
+npx --yes supabase@2.117.0 functions deploy shopify-oauth-callback --no-verify-jwt --use-api
 npx --yes supabase@2.117.0 functions deploy publish-shopify-draft --use-api
 ```
 
-Approve a product review, then select **Create Shopify draft** on its imported-product card. The function verifies the signed-in internal user, records the attempt before calling Shopify, exchanges the credentials for a short-lived server token, and sends only the approved title, description, images, selected variants, prices, SKUs, and option data. Shopify receives `DRAFT` status; the function never activates or publishes the product. A successful response persists the Shopify product and every variant ID. Repeating the action updates the same draft and preserves reconciled variant identities.
+Refresh the dashboard. In **Connect Shopify**, enter the permanent `store-name.myshopify.com` domain and select **Connect store**. Shopify asks the store owner to approve `write_products`, then the callback encrypts the offline access token before saving it. The dashboard shows only the connected domain and status; it cannot read the token, client secret, or encryption key.
+
+Approve a product review, then select **Create Shopify draft** on its imported-product card. The function verifies the signed-in internal user, decrypts the selected store token inside the Edge Function, records the attempt before calling Shopify, and sends only the approved title, description, images, selected variants, prices, SKUs, and option data. Shopify receives `DRAFT` status; the function never activates or publishes the product. A successful response persists the Shopify product and every variant ID. Repeating the action updates the same draft and preserves reconciled variant identities.
 
 If Shopify succeeds but Supabase reconciliation fails, retry the same action. The deterministic handle targets the same product. Provider responses and failure detail remain restricted; the browser receives only sanitized status codes.
 
@@ -176,7 +202,8 @@ GitHub Pages may take a few minutes to refresh after a push. No server secrets, 
 - [Vite public environment handling](https://vite.dev/guide/env-and-mode)
 - [GitHub Pages branch publication](https://docs.github.com/en/pages/getting-started-with-github-pages/creating-a-github-pages-site)
 - [Shopify Dev Dashboard apps](https://shopify.dev/docs/apps/build/dev-dashboard/create-apps-using-dev-dashboard)
-- [Shopify client credentials grant](https://shopify.dev/docs/apps/build/authentication-authorization/client-credentials-grant)
+- [Shopify standalone app authorization](https://shopify.dev/docs/apps/build/authentication-authorization/authenticate-standalone-apps)
+- [Shopify custom distribution](https://shopify.dev/docs/apps/launch/distribution/select-distribution-method)
 - [CJ freight calculation](https://developers.cjdropshipping.com/en/api/api2/api/logistic.html)
 - [CJ country catalog](https://developers.cjdropshipping.com/en/api/api2/standard/ps-country.html)
 - [CJ API point schedule](https://developers.cjdropshipping.com/en/api/api2/standard/points.html)

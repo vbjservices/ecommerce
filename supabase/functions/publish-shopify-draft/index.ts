@@ -4,6 +4,7 @@ import {
   shopifyOptionSignature,
   type DraftSourcePayload,
 } from '../_shared/shopify-draft.ts'
+import { decryptShopifyToken, normalizeShopDomain } from '../_shared/shopify-oauth.ts'
 
 const shopifyApiVersion = '2026-07'
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -12,7 +13,6 @@ const productGidPattern = /^gid:\/\/shopify\/Product\/\d+$/
 const variantGidPattern = /^gid:\/\/shopify\/ProductVariant\/\d+$/
 
 type JsonObject = Record<string, unknown>
-let cachedToken: { key: string; value: string; expiresAt: number } | null = null
 
 class PublishError extends Error {
   constructor(public readonly code: string, public readonly snapshot: JsonObject = {}) {
@@ -69,33 +69,6 @@ function sourcePayload(value: unknown): DraftSourcePayload | null {
     imageUrls: payload.imageUrls.filter((url): url is string => typeof url === 'string'),
     variants: variants as DraftSourcePayload['variants'],
   }
-}
-
-async function accessToken(store: string, clientId: string, clientSecret: string) {
-  const cacheKey = `${store}:${clientId}`
-  if (cachedToken?.key === cacheKey && Date.now() < cachedToken.expiresAt) return cachedToken.value
-  const response = await fetch(`https://${store}/admin/oauth/access_token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      client_id: clientId,
-      client_secret: clientSecret,
-      grant_type: 'client_credentials',
-    }),
-    signal: AbortSignal.timeout(12_000),
-  }).catch(() => null)
-  const body = response ? object(await response.json().catch(() => null)) : null
-  const token = string(body?.access_token)
-  const expiresIn = typeof body?.expires_in === 'number' ? body.expires_in : 86_399
-  if (!response?.ok || !token) {
-    throw new PublishError('shopify_authentication_failed', { httpStatus: response?.status ?? null })
-  }
-  cachedToken = {
-    key: cacheKey,
-    value: token,
-    expiresAt: Date.now() + Math.max(60, expiresIn - 60) * 1_000,
-  }
-  return token
 }
 
 const syncDraftMutation = `#graphql
@@ -189,8 +162,11 @@ export default {
     }
     const input = object(await req.json().catch(() => null))
     const candidateId = string(input?.candidateId)
+    const salesChannelId = string(input?.salesChannelId)
     const actorId = ctx.userClaims?.id
-    if (!candidateId || !uuidPattern.test(candidateId) || !actorId || !uuidPattern.test(actorId)) {
+    if (!candidateId || !uuidPattern.test(candidateId) ||
+        !salesChannelId || !uuidPattern.test(salesChannelId) ||
+        !actorId || !uuidPattern.test(actorId)) {
       return Response.json({ error: 'invalid_request' }, { status: 400 })
     }
     const membership = await ctx.supabase.rpc('is_internal_user')
@@ -198,11 +174,27 @@ export default {
       return Response.json({ error: 'forbidden' }, { status: 403 })
     }
 
-    const store = (Deno.env.get('SHOPIFY_STORE_DOMAIN') ?? '').trim().toLowerCase()
-    const clientId = (Deno.env.get('SHOPIFY_CLIENT_ID') ?? '').trim()
-    const clientSecret = (Deno.env.get('SHOPIFY_CLIENT_SECRET') ?? '').trim()
-    if (!storePattern.test(store) || !clientId || !clientSecret) {
+    const encryptionKey = (Deno.env.get('SHOPIFY_TOKEN_ENCRYPTION_KEY') ?? '').trim()
+    if (!encryptionKey) {
       return Response.json({ error: 'shopify_not_configured' }, { status: 503 })
+    }
+    const connection = await ctx.supabaseAdmin.rpc('get_shopify_connection', {
+      p_sales_channel_id: salesChannelId,
+      p_actor_id: actorId,
+    })
+    const connectionRow = Array.isArray(connection.data) ? object(connection.data[0]) : null
+    const store = normalizeShopDomain(connectionRow?.shop_domain)
+    const ciphertext = string(connectionRow?.access_token_ciphertext)
+    const iv = string(connectionRow?.access_token_iv)
+    if (connection.error || !store || !storePattern.test(store) || !ciphertext || !iv) {
+      return Response.json({ error: 'shopify_not_connected' }, { status: 409 })
+    }
+
+    let token: string
+    try {
+      token = await decryptShopifyToken(ciphertext, iv, encryptionKey, store)
+    } catch {
+      return Response.json({ error: 'shopify_token_unavailable' }, { status: 503 })
     }
 
     const begun = await ctx.supabaseAdmin.rpc('begin_shopify_draft_listing', {
@@ -229,7 +221,6 @@ export default {
     }
 
     try {
-      const token = await accessToken(store, clientId, clientSecret)
       const productInput = prepareShopifyDraftInput(payload, handle)
       const synced = await syncDraft(store, token, productInput, payload.variants, externalListingId)
       const completed = await ctx.supabaseAdmin.rpc('complete_shopify_draft_listing', {

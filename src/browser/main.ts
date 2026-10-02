@@ -2,7 +2,11 @@ import './styles.css';
 import { readPublicConfig } from './config';
 import { createBrowserDatabase } from './supabase';
 import { checkAccess } from './auth';
-import { readRecentCandidates, readRecentDiscoveryCandidates } from './workspace-repository';
+import {
+  readRecentCandidates,
+  readRecentDiscoveryCandidates,
+  readSalesChannels,
+} from './workspace-repository';
 import { isWorkspaceSnapshotFresh, type WorkspaceSnapshot } from './workspace-cache';
 import {
   INITIAL_SHIPPING_MARKET,
@@ -229,6 +233,9 @@ async function start() {
       review_shipping_evidence_missing: 'Every selected market needs a confirmed shipping quote before approval.',
       review_rejection_note_required: 'Add a review note explaining why the product is rejected.',
       shopify_not_configured: 'Shopify is not configured in Supabase Edge Function Secrets.',
+      shopify_not_connected: 'Connect the Shopify store before creating a draft.',
+      shopify_token_unavailable: 'The saved Shopify connection could not be decrypted. Reconnect the store.',
+      shopify_connection_persistence_failed: 'Supabase could not start the Shopify connection. Confirm the OAuth migration ran.',
       listing_candidate_not_approved: 'Approve the current product review before creating a Shopify draft.',
       listing_review_missing: 'Save and approve a product review before creating a Shopify draft.',
       listing_review_incomplete: 'The approved review no longer has a complete priced variant selection.',
@@ -419,8 +426,16 @@ async function start() {
     }
   }
 
-  function shopifyListingPanel(candidate: WorkspaceSnapshot['candidates'][number]) {
+  function shopifyListingPanel(
+    candidate: WorkspaceSnapshot['candidates'][number],
+    salesChannels: WorkspaceSnapshot['salesChannels'],
+  ) {
     const listing = candidate.listings.find((item) => item.sales_channels.provider === 'shopify');
+    const connectedChannel = listing?.sales_channels.id
+      ? salesChannels.find((channel) =>
+          channel.id === listing.sales_channels.id && channel.connection_status === 'connected')
+      : salesChannels.find((channel) =>
+          channel.provider === 'shopify' && channel.connection_status === 'connected');
     const section = document.createElement('section');
     section.className = 'channel-listing-panel';
     if (candidate.status !== 'approved' && !listing) {
@@ -470,13 +485,16 @@ async function start() {
       if (listing?.status === 'syncing' || listing?.status === 'pending') {
         button.disabled = true;
         button.textContent = 'Creating Shopify draft…';
+      } else if (!connectedChannel) {
+        button.disabled = true;
+        button.textContent = 'Connect Shopify first';
       }
       button.addEventListener('click', async () => {
         button.disabled = true;
         button.textContent = listing ? 'Updating Shopify draft…' : 'Creating Shopify draft…';
         status.textContent = 'Sending approved content and selected variants to Shopify…';
         const result = await client.functions.invoke('publish-shopify-draft', {
-          body: { candidateId: candidate.id },
+          body: { candidateId: candidate.id, salesChannelId: connectedChannel?.id },
         });
         if (result.error) {
           button.disabled = false;
@@ -505,6 +523,81 @@ async function start() {
     actions.append(status);
     section.append(heading, detail, actions);
     return section;
+  }
+
+  function shopifyConnectionPanel(current: WorkspaceSnapshot) {
+    const panel = document.createElement('section');
+    panel.className = 'shopify-connection-panel';
+    const connected = current.salesChannels.find(
+      (channel) => channel.provider === 'shopify' && channel.connection_status === 'connected',
+    );
+    const copy = document.createElement('div');
+    const heading = document.createElement('h2');
+    heading.textContent = connected ? 'Shopify connected' : 'Connect Shopify';
+    const detail = document.createElement('p');
+    detail.textContent = connected
+      ? `${connected.external_account_id ?? connected.name} can receive unpublished product drafts.`
+      : 'Connect the permanent myshopify.com address for your existing store.';
+    copy.append(heading, detail);
+    const controls = document.createElement('div');
+    controls.className = 'shopify-connection-controls';
+    if (connected) {
+      const badge = document.createElement('span');
+      badge.className = 'badge eligibility-pass';
+      badge.textContent = 'Connected';
+      controls.append(badge);
+    } else {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'store-name.myshopify.com';
+      input.setAttribute('aria-label', 'Permanent Shopify store domain');
+      input.autocomplete = 'off';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Connect store';
+      const status = document.createElement('span');
+      status.className = 'review-status';
+      status.setAttribute('role', 'status');
+      button.addEventListener('click', async () => {
+        const shopDomain = input.value.trim().toLowerCase();
+        if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shopDomain)) {
+          status.textContent = 'Enter the permanent store-name.myshopify.com address.';
+          input.focus();
+          return;
+        }
+        button.disabled = true;
+        button.textContent = 'Opening Shopify…';
+        status.textContent = 'Preparing a secure Shopify approval request…';
+        const result = await client.functions.invoke('start-shopify-connection', {
+          body: { shopDomain },
+        });
+        const authorizationUrl = result.data && typeof result.data === 'object' &&
+          'authorizationUrl' in result.data && typeof result.data.authorizationUrl === 'string'
+          ? result.data.authorizationUrl : null;
+        if (result.error || !authorizationUrl) {
+          button.disabled = false;
+          button.textContent = 'Try connection again';
+          status.textContent = await functionErrorMessage(
+            result.error,
+            'The Shopify connection could not be started. Confirm the function deployment and secrets.',
+          );
+          return;
+        }
+        try {
+          const target = new URL(authorizationUrl);
+          if (target.protocol !== 'https:' || target.hostname !== shopDomain ||
+              target.pathname !== '/admin/oauth/authorize') throw new Error();
+          window.location.assign(target.href);
+        } catch {
+          button.disabled = false;
+          button.textContent = 'Try connection again';
+          status.textContent = 'The server returned an invalid Shopify approval address.';
+        }
+      });
+      controls.append(input, button, status);
+    }
+    panel.append(copy, controls);
+    return panel;
   }
 
   function reviewEditor(candidate: WorkspaceSnapshot['candidates'][number]) {
@@ -965,7 +1058,7 @@ async function start() {
     stopCarousels();
     const { access, candidates } = current;
     app.innerHTML = `<section class="workspace"><div class="workspace-heading"><div><p class="eyebrow">Overview</p><h1>Product workspace</h1></div><div class="actions"></div></div>
-      <p class="account"></p><nav class="workspace-tabs" role="tablist" aria-label="Product workspace views">
+      <p class="account"></p><div class="shopify-connection-slot"></div><nav class="workspace-tabs" role="tablist" aria-label="Product workspace views">
       <button id="discovery-tab" type="button" role="tab" data-view="discovery">Discovery <span class="tab-count"></span></button>
       <button id="imported-tab" type="button" role="tab" data-view="imported">Imported products <span class="tab-count"></span></button></nav>
       <section class="panel discovery-panel" role="tabpanel" aria-labelledby="discovery-tab" data-panel="discovery"><div class="section-heading"><h2>Discovery shortlist</h2><span class="badge">Evidence ranked</span></div>
@@ -974,6 +1067,7 @@ async function start() {
       <div class="candidates"></div></section><p class="footnote refresh-status" role="status"></p>
       <p class="footnote">Costs, stock, and shipping are timestamped supplier estimates. Market demand and margin still need review.</p></section>`;
     app.querySelector('.account')!.textContent = `Signed in as ${access.email}`;
+    app.querySelector('.shopify-connection-slot')!.append(shopifyConnectionPanel(current));
     app.querySelector('.refresh-status')!.textContent = status;
     action('Refresh', () => { void refresh({ force: true, background: true }); });
     action('Sign out', () => { void signOut(); });
@@ -1056,7 +1150,7 @@ async function start() {
         body.append(heading, facts);
         const quoteDetails = shippingQuoteDetails(productQuotes);
         if (quoteDetails) body.append(quoteDetails);
-        body.append(reviewEditor(candidate), shopifyListingPanel(candidate));
+        body.append(reviewEditor(candidate), shopifyListingPanel(candidate, current.salesChannels));
         const cardActions = document.createElement('div');
         cardActions.className = 'card-actions';
         const shippingControls = shippingScanControls({ candidateId: candidate.id }, productQuotes.length);
@@ -1095,12 +1189,13 @@ async function start() {
         action('Sign out', () => { void signOut(); });
         return;
       }
-      const [candidates, discoveryCandidates] = await Promise.all([
+      const [candidates, discoveryCandidates, salesChannels] = await Promise.all([
         readRecentCandidates(client),
         readRecentDiscoveryCandidates(client),
+        readSalesChannels(client),
       ]);
       if (current !== revision) return;
-      snapshot = { access, candidates, discoveryCandidates, fetchedAt: Date.now() };
+      snapshot = { access, candidates, discoveryCandidates, salesChannels, fetchedAt: Date.now() };
       renderWorkspace(snapshot);
     } catch (error) {
       if (current !== revision) return;

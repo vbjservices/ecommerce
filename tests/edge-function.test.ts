@@ -93,14 +93,45 @@ test('Shopify draft function records intent, keeps credentials server-side, and 
   assert.ok(intent > membership);
   assert.ok(provider > intent);
   assert.ok(reconciliation > provider);
-  assert.match(source, /Deno\.env\.get\('SHOPIFY_CLIENT_SECRET'\)/);
+  assert.match(source, /Deno\.env\.get\('SHOPIFY_TOKEN_ENCRYPTION_KEY'\)/);
+  assert.match(source, /rpc\('get_shopify_connection'/);
+  assert.match(source, /decryptShopifyToken/);
   assert.match(source, /status: 'draft'/);
 
   const browser = await readFile('src/browser/main.ts', 'utf8');
   assert.match(browser, /functions\.invoke\('publish-shopify-draft'/);
-  assert.match(browser, /body: \{ candidateId: candidate\.id \}/);
+  assert.match(browser, /body: \{ candidateId: candidate\.id, salesChannelId: connectedChannel\?\.id \}/);
   assert.doesNotMatch(browser, /SHOPIFY_CLIENT_SECRET|SHOPIFY_CLIENT_ID/);
 
   const config = await readFile('supabase/config.toml', 'utf8');
   assert.match(config, /\[functions\.publish-shopify-draft\][\s\S]*verify_jwt = true/);
+});
+
+test('Shopify connection uses authenticated OAuth start, verified public callback, and encrypted token storage', async () => {
+  const start = await readFile('supabase/functions/start-shopify-connection/index.ts', 'utf8');
+  const callback = await readFile('supabase/functions/shopify-oauth-callback/index.ts', 'utf8');
+  const crypto = await readFile('supabase/functions/_shared/shopify-oauth.ts', 'utf8');
+  for (const [source, sourcefile] of [
+    [start, 'supabase/functions/start-shopify-connection/index.ts'],
+    [callback, 'supabase/functions/shopify-oauth-callback/index.ts'],
+    [crypto, 'supabase/functions/_shared/shopify-oauth.ts'],
+  ] as const) await transform(source, { loader: 'ts', format: 'esm', target: 'es2022', sourcefile });
+
+  assert.match(start, /withSupabase\(\{ auth: 'user' \}/);
+  assert.ok(start.indexOf("rpc('is_internal_user')") < start.indexOf("rpc('create_shopify_oauth_state'"));
+  assert.match(start, /scope', 'write_products'/);
+  assert.match(callback, /verifyShopifyHmac/);
+  assert.match(callback, /rpc\('consume_shopify_oauth_state'/);
+  assert.match(callback, /expiring: 0/);
+  assert.match(callback, /encryptShopifyToken/);
+  assert.match(callback, /rpc\('connect_shopify_channel'/);
+  assert.doesNotMatch(callback, /console\.(?:log|error).*token/);
+
+  const browser = await readFile('src/browser/main.ts', 'utf8');
+  assert.match(browser, /functions\.invoke\('start-shopify-connection'/);
+  assert.doesNotMatch(browser, /SHOPIFY_CLIENT_SECRET|SHOPIFY_TOKEN_ENCRYPTION_KEY/);
+
+  const config = await readFile('supabase/config.toml', 'utf8');
+  assert.match(config, /\[functions\.start-shopify-connection\][\s\S]*verify_jwt = true/);
+  assert.match(config, /\[functions\.shopify-oauth-callback\][\s\S]*verify_jwt = false/);
 });
