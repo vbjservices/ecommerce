@@ -140,9 +140,10 @@ The store appearing in Shopify's account switcher does not mean it belongs to th
    https://gwteaavfssymdjdpunkc.supabase.co/functions/v1/shopify-oauth-callback
    ```
 
-4. In the app version, request only `write_products`, then release the version.
-5. In the app's Distribution card, select **Custom distribution**. Enter the existing store's permanent `*.myshopify.com` domain and generate its custom install link. Distribution cannot be changed later, so select Custom for this single-store integration.
-6. Copy the app's Client ID and Client secret. Keep the secret server-side.
+4. Leave **Embed app in Shopify admin** off and enable **Use legacy install flow**. This standalone integration implements Shopify's authorization-code flow and OAuth callback; Shopify-managed installation would not call that flow.
+5. In the app version, request only `write_products`, then release the version.
+6. In the app's Distribution card, select **Custom distribution**. Enter the existing store's permanent `*.myshopify.com` domain and generate its custom install link. Distribution cannot be changed later, so select Custom for this single-store integration.
+7. Copy the app's Client ID and Client secret. Keep the secret server-side.
 
 Generate a separate 32-byte token-encryption key locally. Copy only the output into Supabase secrets; do not commit it:
 
