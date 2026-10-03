@@ -132,7 +132,7 @@ Shopify is the selected first channel. Apply `20261001000300_shopify_draft_listi
 
 The store appearing in Shopify's account switcher does not mean it belongs to the same Dev Dashboard organization as the app. Do not use **Create store** to connect an existing live shop; that creates a separate development store. For an existing store outside the Dev Dashboard organization, use a custom-distribution standalone app and the authorization-code flow:
 
-1. In Shopify Dev Dashboard, select **Apps -> Create app**. Use a clear internal name such as `Petvia Product Publisher`.
+1. In Shopify Dev Dashboard, select **Apps -> Create app**. Use a clear internal name such as `Petvia Product Publisher`. The Distribution control is not shown on this creation form.
 2. Set the app URL to `https://vbjservices.github.io/ecommerce/`.
 3. Add this exact allowed redirect URL, replacing the project reference only if the Supabase project changes:
 
@@ -141,8 +141,8 @@ The store appearing in Shopify's account switcher does not mean it belongs to th
    ```
 
 4. Leave **Embed app in Shopify admin** off and enable **Use legacy install flow**. This standalone integration implements Shopify's authorization-code flow and OAuth callback; Shopify-managed installation would not call that flow.
-5. In the app version, request only `write_products`, then release the version.
-6. In the app's Distribution card, select **Custom distribution**. Enter the existing store's permanent `*.myshopify.com` domain and generate its custom install link. Distribution cannot be changed later, so select Custom for this single-store integration.
+5. In the app version, request only `write_products`, select **Create app**, and release the version. A released version is required before the app can be installed.
+6. Reopen the app and select **Home** or **Overview** rather than Versions or Settings. In the **Distribution** card, select **Select distribution method -> Custom distribution**. Enter the existing store's permanent `*.myshopify.com` domain and generate its custom install link. Distribution cannot be changed later, so select Custom for this single-store integration.
 7. Copy the app's Client ID and Client secret. Keep the secret server-side.
 
 Generate a separate 32-byte token-encryption key locally. Copy only the output into Supabase secrets; do not commit it:
