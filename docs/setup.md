@@ -130,7 +130,7 @@ Open **Product review and pricing** on an imported card. Choose only confirmed E
 
 Shopify is the selected first channel. Apply `20261001000300_shopify_draft_listings.sql` and `20261002000100_shopify_oauth_connections.sql` before deploying the functions. The migrations add durable listing intent, explicit product/variant mappings, restricted attempt history, single-use OAuth state, encrypted credential storage, and read-only connection status.
 
-The store appearing in Shopify's account switcher does not mean it belongs to the same Dev Dashboard organization as the app. Do not use **Create store** to connect an existing live shop; that creates a separate development store. For an existing store outside the Dev Dashboard organization, use a custom-distribution standalone app and the authorization-code flow:
+First identify the organization context shown in the Dev Dashboard. A merchant-created app has no Distribution card: Shopify automatically treats it as custom and ties it to that merchant organization. A Partner-created app shows a Distribution card and needs a custom install link for an external merchant store. Do not use **Create store** to connect an existing live shop; that creates a separate development store.
 
 1. In Shopify Dev Dashboard, select **Apps -> Create app**. Use a clear internal name such as `Petvia Product Publisher`. The Distribution control is not shown on this creation form.
 2. Set the app URL to `https://vbjservices.github.io/ecommerce/`.
@@ -142,8 +142,8 @@ The store appearing in Shopify's account switcher does not mean it belongs to th
 
 4. Leave **Embed app in Shopify admin** off and enable **Use legacy install flow**. This standalone integration implements Shopify's authorization-code flow and OAuth callback; Shopify-managed installation would not call that flow.
 5. In the app version, request only `write_products`, select **Create app**, and release the version. A released version is required before the app can be installed.
-6. Reopen the app and select **Home** or **Overview** rather than Versions or Settings. In the **Distribution** card, select **Select distribution method -> Custom distribution**. Enter the existing store's permanent `*.myshopify.com` domain and generate its custom install link. Distribution cannot be changed later, so select Custom for this single-store integration.
-7. Copy the app's Client ID and Client secret. Keep the secret server-side.
+6. If the app was created in Petvia's merchant organization, skip Distribution and select **Install app** on the app Overview. Choose the existing Petvia store and approve the installation. If the app was created in a Partner organization for an external merchant instead, reopen the app's Home, select **Distribution -> Select distribution method -> Custom distribution**, enter the store's permanent `*.myshopify.com` domain, and open the generated link while signed in as the store owner.
+7. From **App settings**, copy the app's Client ID and Client secret. Keep the secret server-side.
 
 Generate a separate 32-byte token-encryption key locally. Copy only the output into Supabase secrets; do not commit it:
 
