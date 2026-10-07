@@ -125,6 +125,9 @@ test('Shopify connection uses authenticated OAuth start, verified public callbac
   assert.match(callback, /expiring: 0/);
   assert.match(callback, /encryptShopifyToken/);
   assert.match(callback, /rpc\('connect_shopify_channel'/);
+  assert.match(callback, /status: 303/);
+  assert.match(callback, /destination\.searchParams\.set\('shopify', result\)/);
+  assert.doesNotMatch(callback, /text\/html/);
   assert.doesNotMatch(callback, /console\.(?:log|error).*token/);
 
   const browser = await readFile('src/browser/main.ts', 'utf8');

@@ -17,6 +17,25 @@ import { compareDecimalAmounts, estimateReviewEconomics } from '../domain/review
 
 const app = document.querySelector<HTMLElement>('#app')!;
 const carouselTimers = new Set<number>();
+const shopifyCallbackMessages: Record<string, string> = {
+  connected: 'Shopify authorization completed successfully.',
+  unsupported_request: 'The Shopify callback used an unsupported request. Start the connection again.',
+  not_configured: 'The Shopify server secrets are incomplete.',
+  approval_unverified: 'Shopify approval could not be verified. Start the connection again.',
+  request_expired: 'The Shopify connection request expired. Start the connection again.',
+  product_access_missing: 'Shopify did not grant product access. Confirm the app requests write_products.',
+  token_storage_invalid: 'The Shopify token encryption key is invalid.',
+  connection_save_failed: 'The Shopify connection could not be saved. Try connecting again.',
+};
+const initialUrl = new URL(window.location.href);
+const shopifyCallbackCode = initialUrl.searchParams.get('shopify');
+let shopifyCallbackNotice = shopifyCallbackCode
+  ? shopifyCallbackMessages[shopifyCallbackCode] ?? 'The Shopify connection could not be completed.'
+  : null;
+if (initialUrl.searchParams.has('shopify')) {
+  initialUrl.searchParams.delete('shopify');
+  window.history.replaceState(null, '', `${initialUrl.pathname}${initialUrl.search}${initialUrl.hash}`);
+}
 const europeMarketCodes = new Set([
   'AL', 'AD', 'AT', 'BY', 'BE', 'BA', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR',
   'DE', 'GR', 'HU', 'IS', 'IE', 'IT', 'XK', 'LV', 'LI', 'LT', 'LU', 'MT', 'MD', 'MC',
@@ -539,6 +558,14 @@ async function start() {
       ? `${connected.external_account_id ?? connected.name} can receive unpublished product drafts.`
       : 'Connect the permanent myshopify.com address for your existing store.';
     copy.append(heading, detail);
+    if (shopifyCallbackNotice) {
+      const notice = document.createElement('p');
+      notice.className = 'review-status';
+      notice.setAttribute('role', 'status');
+      notice.textContent = shopifyCallbackNotice;
+      copy.append(notice);
+      shopifyCallbackNotice = null;
+    }
     const controls = document.createElement('div');
     controls.className = 'shopify-connection-controls';
     if (connected) {
