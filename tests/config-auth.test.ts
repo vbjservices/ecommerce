@@ -4,7 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { readPublicConfig } from '../src/browser/config';
 import { readCjConfig, readOptionalOllamaConfig, readServerConfig } from '../src/server/config';
 import { checkAccess } from '../src/browser/auth';
-import { readRecentCandidates, readRecentDiscoveryCandidates } from '../src/browser/workspace-repository';
+import { readRecentCandidates, readRecentDiscoveryCandidates, workspaceReadError } from '../src/browser/workspace-repository';
 import { isWorkspaceSnapshotFresh, WORKSPACE_CACHE_TTL_MS, type WorkspaceSnapshot } from '../src/browser/workspace-cache';
 
 const publicEnv = { PUBLIC_SUPABASE_URL: 'https://example.supabase.co', PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_TEST_ONLY' };
@@ -126,6 +126,19 @@ test('repository does not convert failed or malformed reads into a valid empty w
     review,
     listings: [],
   }]);
+});
+
+test('repository explains Supabase usage restrictions without exposing raw provider errors', () => {
+  const restricted = workspaceReadError({
+    status: 402,
+    error: { code: 'exceeded_egress_quota', message: 'provider detail' },
+  }, 'Channel listings could not be loaded.');
+  assert.match(restricted.message, /usage quota was exceeded/);
+  assert.doesNotMatch(restricted.message, /provider detail/);
+  assert.equal(
+    workspaceReadError({ status: 500, error: { code: 'unexpected' } }, 'Workspace failed.').message,
+    'Workspace failed.',
+  );
 });
 
 test('repository stays readable during the additive product image migration', async () => {

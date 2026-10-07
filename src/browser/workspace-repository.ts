@@ -2,6 +2,31 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { candidateStatuses } from '../domain/candidates';
 
+const quotaRestrictionMessage =
+  'Supabase has temporarily restricted this organization because its usage quota was exceeded. Database access will resume after the billing cycle resets or the organization is upgraded.';
+
+type SupabaseReadResult = {
+  status?: number;
+  error: {
+    code?: string;
+    message?: string;
+    details?: string | null;
+    hint?: string | null;
+  } | null;
+};
+
+export function workspaceReadError(result: SupabaseReadResult, fallback: string): Error {
+  const errorText = [
+    result.error?.code,
+    result.error?.message,
+    result.error?.details,
+    result.error?.hint,
+  ].filter((value): value is string => Boolean(value)).join(' ');
+  const quotaRestricted = result.status === 402
+    || /(?:exceed(?:ed)?[\s_-]*(?:egress|[^\s]*quota)|quota[^.]*exceed|payment required|project[^.]*restrict)/i.test(errorText);
+  return new Error(quotaRestricted ? quotaRestrictionMessage : fallback);
+}
+
 const supplierVariantSummary = z.object({
   id: z.uuid(),
   external_variant_id: z.string(),
@@ -174,6 +199,7 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
   // Keep Pages usable while either additive image migration is being applied.
   let data: unknown = result.data;
   let error = result.error;
+  let status = result.status;
   if (error?.code === '42703' || error?.code === 'PGRST204') {
     const primaryOnly = await client.from('product_candidates')
       .select(`id,status,created_at,products!inner(title,description,image_url),supplier_products!inner(
@@ -184,6 +210,7 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
       .order('created_at', { ascending: false }).limit(20);
     const primaryData = primaryOnly.data as unknown as Array<Record<string, unknown>> | null;
     error = primaryOnly.error;
+    status = primaryOnly.status;
     data = primaryData?.map((candidate) => {
       const product = candidate.products as Record<string, unknown>;
       const imageUrl = typeof product.image_url === 'string' ? product.image_url : null;
@@ -202,13 +229,14 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
         .order('created_at', { ascending: false }).limit(20);
       const legacyData = legacy.data as unknown as Array<Record<string, unknown>> | null;
       error = legacy.error;
+      status = legacy.status;
       data = legacyData?.map((candidate) => ({
           ...candidate,
           products: { ...(candidate.products as Record<string, unknown>), image_url: null, image_urls: [] },
       })) ?? null;
     }
   }
-  if (error) throw new Error('Candidates could not be loaded. Please try again.');
+  if (error) throw workspaceReadError({ error, status }, 'Candidates could not be loaded. Please try again.');
   const base = z.array(candidateBaseSummary).safeParse(data);
   if (!base.success) throw new Error('The workspace data is not in the expected format. Contact an administrator.');
   const variantIds = base.data.flatMap((candidate) =>
@@ -220,7 +248,7 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
         available,shipping_method,cost,currency,delivery_days_min,delivery_days_max,quoted_at`)
       .in('supplier_variant_id', variantIds);
     if (quoteResult.error && !['42P01', 'PGRST205'].includes(quoteResult.error.code)) {
-      throw new Error('Shipping quotes could not be loaded. Please try again.');
+      throw workspaceReadError(quoteResult, 'Shipping quotes could not be loaded. Please try again.');
     }
     if (!quoteResult.error) {
       const parsedQuotes = z.array(shippingQuoteSummary).safeParse(quoteResult.data);
@@ -243,7 +271,7 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
         product_review_events(event_type,note,created_at)`)
       .in('candidate_id', base.data.map((candidate) => candidate.id));
     if (reviewResult.error && !['42P01', 'PGRST205'].includes(reviewResult.error.code)) {
-      throw new Error('Product reviews could not be loaded. Please try again.');
+      throw workspaceReadError(reviewResult, 'Product reviews could not be loaded. Please try again.');
     }
     if (!reviewResult.error) {
       const parsedReviews = z.array(reviewSummary).safeParse(reviewResult.data);
@@ -261,7 +289,7 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
         channel_listing_variants(product_variant_id,external_variant_id)`)
       .in('candidate_id', base.data.map((candidate) => candidate.id));
     if (listingResult.error && !['42P01', '42703', 'PGRST204', 'PGRST205'].includes(listingResult.error.code)) {
-      throw new Error('Channel listings could not be loaded. Please try again.');
+      throw workspaceReadError(listingResult, 'Channel listings could not be loaded. Please try again.');
     }
     if (!listingResult.error) {
       const parsedListings = z.array(channelListingSummary).safeParse(listingResult.data);
@@ -296,7 +324,7 @@ export async function readSalesChannels(client: SupabaseClient): Promise<SalesCh
     .select('id,provider,name,external_account_id,connection_status,connected_at')
     .order('connected_at', { ascending: false, nullsFirst: false });
   if (result.error?.code === '42703' || result.error?.code === 'PGRST204') return [];
-  if (result.error) throw new Error('Sales channels could not be loaded. Please try again.');
+  if (result.error) throw workspaceReadError(result, 'Sales channels could not be loaded. Please try again.');
   const parsed = z.array(salesChannelSummary).safeParse(result.data);
   if (!parsed.success) throw new Error('Sales channel data is not in the expected format.');
   return parsed.data;
@@ -320,6 +348,7 @@ export async function readRecentDiscoveryCandidates(
   if (result.error?.code === '42P01' || result.error?.code === 'PGRST205') return [];
   let data: unknown = result.data;
   let error = result.error;
+  let status = result.status;
   if (error?.code === '42703' || error?.code === 'PGRST204') {
     const primaryOnly = await client.from('discovery_candidates')
       .select(`id,rank,external_product_id,title,image_url,source_url,eligibility_status,relevance_level,
@@ -333,12 +362,13 @@ export async function readRecentDiscoveryCandidates(
       .order('rank', { ascending: true })
       .limit(20);
     error = primaryOnly.error;
+    status = primaryOnly.status;
     data = (primaryOnly.data as unknown as Array<Record<string, unknown>> | null)?.map((candidate) => ({
       ...candidate,
       image_urls: typeof candidate.image_url === 'string' ? [candidate.image_url] : [],
     })) ?? null;
   }
-  if (error) throw new Error('Discovery results could not be loaded. Please try again.');
+  if (error) throw workspaceReadError({ error, status }, 'Discovery results could not be loaded. Please try again.');
   const parsed = z.array(discoveryCandidateBaseSummary).safeParse(data);
   if (!parsed.success) throw new Error('The discovery data is not in the expected format. Contact an administrator.');
   const candidateIds = parsed.data.map((candidate) => candidate.id);
@@ -349,7 +379,7 @@ export async function readRecentDiscoveryCandidates(
         quantity,available,shipping_method,cost,currency,delivery_days_min,delivery_days_max,quoted_at`)
       .in('discovery_candidate_id', candidateIds);
     if (quoteResult.error && !['42P01', 'PGRST205'].includes(quoteResult.error.code)) {
-      throw new Error('Discovery shipping quotes could not be loaded. Please try again.');
+      throw workspaceReadError(quoteResult, 'Discovery shipping quotes could not be loaded. Please try again.');
     }
     if (!quoteResult.error) {
       const parsedQuotes = z.array(discoveryShippingQuoteSummary).safeParse(quoteResult.data);
