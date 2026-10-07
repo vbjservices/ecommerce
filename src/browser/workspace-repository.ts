@@ -286,7 +286,9 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
       .select(`id,candidate_id,status,external_listing_id,external_handle,source_review_updated_at,
         attempt_count,last_error_code,last_attempted_at,synced_at,
         sales_channels!inner(id,provider,name,external_account_id),
-        channel_listing_variants(product_variant_id,external_variant_id)`)
+        channel_listing_variants!channel_listing_variants_channel_listing_id_fkey(
+          product_variant_id,external_variant_id
+        )`)
       .in('candidate_id', base.data.map((candidate) => candidate.id));
     if (listingResult.error && !['42P01', '42703', 'PGRST204', 'PGRST205'].includes(listingResult.error.code)) {
       throw workspaceReadError(listingResult, 'Channel listings could not be loaded. Please try again.');
