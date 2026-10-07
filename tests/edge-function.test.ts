@@ -97,6 +97,8 @@ test('Shopify draft function records intent, keeps credentials server-side, and 
   assert.match(source, /rpc\('get_shopify_connection'/);
   assert.match(source, /decryptShopifyToken/);
   assert.match(source, /status: 'draft'/);
+  assert.match(source, /variables: \{ input, identifier \}/);
+  assert.doesNotMatch(source, /productOptions: undefined/);
 
   const browser = await readFile('src/browser/main.ts', 'utf8');
   assert.match(browser, /functions\.invoke\('publish-shopify-draft'/);

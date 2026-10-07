@@ -97,16 +97,15 @@ async function syncDraft(
   externalListingId: string | null,
 ) {
   const identifier = externalListingId ? { id: externalListingId } : { handle: input.handle }
-  const mutationInput = externalListingId
-    ? { ...input, productOptions: undefined }
-    : input
   const response = await fetch(`https://${store}/admin/api/${shopifyApiVersion}/graphql.json`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-Shopify-Access-Token': token,
     },
-    body: JSON.stringify({ query: syncDraftMutation, variables: { input: mutationInput, identifier } }),
+    // productSet treats options and variants as a complete product state. Keep
+    // productOptions on updates so newly selected option values can be created.
+    body: JSON.stringify({ query: syncDraftMutation, variables: { input, identifier } }),
     signal: AbortSignal.timeout(30_000),
   }).catch(() => null)
   const raw = response ? object(await response.json().catch(() => null)) : null
