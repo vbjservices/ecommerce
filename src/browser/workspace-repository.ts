@@ -34,6 +34,7 @@ const supplierVariantSummary = z.object({
   cost: z.union([z.number().nonnegative(), z.string()]).nullable(),
   currency: z.string().nullable(),
   stock: z.number().int().nonnegative().nullable(),
+  image_url: z.string().nullable().optional(),
   product_variants: z.object({
     sku: z.string().nullable(),
     options: z.record(z.string(), z.string()),
@@ -192,7 +193,7 @@ export async function readRecentCandidates(client: SupabaseClient): Promise<Cand
   const result = await client.from('product_candidates')
     .select(`id,status,created_at,products!inner(title,description,image_url,image_urls),supplier_products!inner(
       external_product_id,source_url,last_seen_at,suppliers!inner(name),
-      supplier_variants(id,external_variant_id,product_variant_id,cost,currency,stock,
+      supplier_variants(id,external_variant_id,product_variant_id,cost,currency,stock,image_url,
         product_variants!inner(sku,options))
     )`)
     .order('created_at', { ascending: false }).limit(20);

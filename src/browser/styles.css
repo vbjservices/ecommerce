@@ -111,8 +111,10 @@ summary { color: var(--accent); cursor: pointer; font-weight: 650; }
 .secondary-button, .price-suggestion { color: var(--accent); background: white; border-color: #a7b8bc; }
 .secondary-button:hover, .price-suggestion:hover { color: white; }
 .variant-review-table { display: grid; margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-.variant-review-row { display: grid; grid-template-columns: minmax(150px, 1.2fr) minmax(120px, .8fr) minmax(110px, .6fr) minmax(210px, 1.5fr) auto; gap: 12px; align-items: center; padding: 12px; border-top: 1px solid var(--border); }
+.variant-review-row { display: grid; grid-template-columns: 52px minmax(150px, 1.2fr) minmax(120px, .8fr) minmax(110px, .6fr) minmax(210px, 1.5fr) auto; gap: 12px; align-items: center; padding: 12px; border-top: 1px solid var(--border); }
 .variant-review-row:first-child { border-top: 0; }
+.variant-thumbnail { width: 52px; aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--border); border-radius: 7px; color: var(--muted); background: #f3f6f7; font-size: 9px; text-align: center; }
+.variant-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
 .variant-choice span { overflow-wrap: anywhere; }
 .variant-source-facts, .variant-economics { color: var(--muted); font-size: 12px; }
 .variant-price { font-size: 12px; }

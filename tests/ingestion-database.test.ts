@@ -78,6 +78,15 @@ async function ingest(
             ],
           },
         },
+        variants: {
+          data: variants.map((variant) => {
+            const value = variant as { external_variant_id?: unknown; image_url?: unknown };
+            return {
+              vid: value.external_variant_id,
+              variantImage: value.image_url,
+            };
+          }),
+        },
       }),
     ]);
     await db.exec('commit');
@@ -104,6 +113,7 @@ test('trusted supplier ingestion is atomic, idempotent, and retains raw history'
       cost: null,
       currency: null,
       stock: null,
+      image_url: 'https://cf.cjdropshipping.com/product/catnip-one.jpg',
     },
     {
       external_variant_id: '2506170616321605300',
@@ -112,6 +122,7 @@ test('trusted supplier ingestion is atomic, idempotent, and retains raw history'
       cost: '3.16',
       currency: 'USD',
       stock: 8337,
+      image_url: 'https://cf.cjdropshipping.com/product/catnip-ten.jpg',
     },
   ];
   try {
@@ -162,19 +173,22 @@ test('trusted supplier ingestion is atomic, idempotent, and retains raw history'
       cost: string | null;
       currency: string | null;
       stock: number | null;
-    }>('select external_variant_id,cost::text,currency,stock from public.supplier_variants order by external_variant_id');
+      image_url: string | null;
+    }>('select external_variant_id,cost::text,currency,stock,image_url from public.supplier_variants order by external_variant_id');
     assert.deepEqual(variants.rows, [
       {
         external_variant_id: '1561984433677414400',
         cost: null,
         currency: null,
         stock: null,
+        image_url: 'https://cf.cjdropshipping.com/product/catnip-one.jpg',
       },
       {
         external_variant_id: '2506170616321605300',
         cost: '3.250000',
         currency: 'USD',
         stock: 8200,
+        image_url: 'https://cf.cjdropshipping.com/product/catnip-ten.jpg',
       },
     ]);
 

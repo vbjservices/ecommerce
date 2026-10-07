@@ -805,6 +805,19 @@ async function start() {
       const selected = document.createElement('input');
       selected.type = 'checkbox';
       selected.checked = saved?.selected ?? false;
+      const thumbnail = document.createElement('div');
+      thumbnail.className = 'variant-thumbnail';
+      if (variant.image_url) {
+        const image = document.createElement('img');
+        image.src = variant.image_url;
+        image.alt = 'Supplier image for this variant';
+        image.loading = 'lazy';
+        image.decoding = 'async';
+        image.referrerPolicy = 'no-referrer';
+        thumbnail.append(image);
+      } else {
+        thumbnail.textContent = 'No image';
+      }
       const optionText = Object.entries(variant.product_variants.options)
         .map(([name, value]) => `${name}: ${value}`).join(' · ');
       const variantName = document.createElement('span');
@@ -837,7 +850,7 @@ async function start() {
       });
       selected.addEventListener('change', updateEconomics);
       price.addEventListener('input', updateEconomics);
-      row.append(identity, facts, priceLabel, economics, suggestion);
+      row.append(thumbnail, identity, facts, priceLabel, economics, suggestion);
       variantTable.append(row);
       variantControls.push({
         selected, price, economics, suggestion,
@@ -1039,13 +1052,13 @@ async function start() {
       cardActions.append(shippingControls.button, shippingControls.status);
       const importButton = document.createElement('button');
       importButton.type = 'button';
-      importButton.textContent = 'Import product';
+      importButton.textContent = 'Import to workspace';
       const importStatus = document.createElement('span');
       importStatus.className = 'import-status';
       importStatus.setAttribute('role', 'status');
       importButton.addEventListener('click', async () => {
         importButton.disabled = true;
-        importButton.textContent = 'Importing…';
+        importButton.textContent = 'Importing to workspace…';
         importStatus.textContent = '';
         const result = await client.functions.invoke('import-cj-product', {
           body: { discoveryCandidateId: candidate.id },
