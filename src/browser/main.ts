@@ -14,6 +14,7 @@ import {
   shippingMarketStatusLabel,
 } from '../domain/shipping';
 import { compareDecimalAmounts, estimateReviewEconomics } from '../domain/reviews';
+import { importedProductHash, readWorkspaceRoute } from './workspace-route';
 
 const app = document.querySelector<HTMLElement>('#app')!;
 const carouselTimers = new Set<number>();
@@ -627,7 +628,10 @@ async function start() {
     return panel;
   }
 
-  function reviewEditor(candidate: WorkspaceSnapshot['candidates'][number]) {
+  function reviewEditor(
+    candidate: WorkspaceSnapshot['candidates'][number],
+    standalone = false,
+  ) {
     const review = candidate.review;
     const variants = candidate.supplier_products.supplier_variants;
     const productQuotes = productShippingQuotes(candidate);
@@ -650,11 +654,13 @@ async function start() {
     ])].sort();
     const names = new Intl.DisplayNames(undefined, { type: 'region' });
 
-    const details = document.createElement('details');
-    details.className = 'review-panel';
-    if (candidate.status === 'ready_for_review') details.open = true;
-    const summary = document.createElement('summary');
-    summary.textContent = review ? 'Product review and pricing' : 'Prepare product for approval';
+    const container = standalone ? document.createElement('section') : document.createElement('details');
+    container.className = `review-panel${standalone ? ' standalone' : ''}`;
+    if (!standalone && candidate.status === 'ready_for_review') {
+      (container as HTMLDetailsElement).open = true;
+    }
+    const heading = document.createElement(standalone ? 'h2' : 'summary');
+    heading.textContent = review ? 'Product review and pricing' : 'Prepare product for approval';
     const form = document.createElement('form');
     form.className = 'review-form';
     form.noValidate = true;
@@ -953,9 +959,9 @@ async function start() {
       history.append(historySummary, list);
       form.append(history);
     }
-    details.append(summary, form);
+    container.append(heading, form);
     updateEconomics();
-    return details;
+    return container;
   }
 
   function renderDiscoveryCandidates(current: WorkspaceSnapshot) {
@@ -1146,17 +1152,31 @@ async function start() {
       list.innerHTML = '<div class="empty"><span class="empty-mark" aria-hidden="true">＋</span><h3>No candidates yet</h3><p>Products will appear here after the first supplier import.</p></div>';
     } else {
       const ul = document.createElement('ul');
-      ul.className = 'candidate-list';
+      ul.className = 'candidate-list imported-product-list';
       for (const candidate of candidates) {
         const li = document.createElement('li');
-        li.className = 'candidate-card';
-        const media = imageCarousel(
-          candidate.products.title,
-          [...candidate.products.image_urls, candidate.products.image_url],
-          'candidate-media',
-        );
+        li.className = 'imported-product-card';
+        const link = document.createElement('a');
+        link.className = 'imported-product-link';
+        link.href = importedProductHash(candidate.id);
+        link.addEventListener('click', () => { activeView = 'imported'; });
+        const media = document.createElement('div');
+        media.className = 'imported-product-media';
+        const imageUrl = [...candidate.products.image_urls, candidate.products.image_url]
+          .map(safeSourceUrl).find((value): value is string => value !== null);
+        if (imageUrl) {
+          const image = document.createElement('img');
+          image.src = imageUrl;
+          image.alt = '';
+          image.loading = 'lazy';
+          image.decoding = 'async';
+          image.referrerPolicy = 'no-referrer';
+          media.append(image);
+        } else {
+          media.textContent = 'No image';
+        }
         const body = document.createElement('div');
-        body.className = 'candidate-body';
+        body.className = 'imported-product-summary';
         const heading = document.createElement('div');
         heading.className = 'candidate-heading';
         const identity = document.createElement('div');
@@ -1174,42 +1194,133 @@ async function start() {
         const productQuotes = productShippingQuotes(candidate);
         const shipping = shippingOverview(productQuotes);
         const facts = document.createElement('dl');
-        facts.className = 'candidate-facts';
+        facts.className = 'candidate-facts imported-product-facts';
         facts.append(
           metric('Supplier cost', supplierCost(candidate)),
           metric('Variants', String(candidate.supplier_products.supplier_variants.length)),
           metric('Reported stock', supplierStock(candidate)),
-          metric('Last checked', new Intl.DateTimeFormat(undefined, {
-            dateStyle: 'medium', timeStyle: 'short',
-          }).format(new Date(candidate.supplier_products.last_seen_at))),
           metric('Shipping', shipping.status),
-          metric('Est. shipping · 1 unit', shipping.cost),
         );
-
-        const sourceUrl = safeSourceUrl(candidate.supplier_products.source_url);
-        body.append(heading, facts);
-        const quoteDetails = shippingQuoteDetails(productQuotes);
-        if (quoteDetails) body.append(quoteDetails);
-        body.append(reviewEditor(candidate), shopifyListingPanel(candidate, current.salesChannels));
-        const cardActions = document.createElement('div');
-        cardActions.className = 'card-actions';
-        const shippingControls = shippingScanControls({ candidateId: candidate.id }, productQuotes.length);
-        cardActions.append(shippingControls.button, shippingControls.status);
-        if (sourceUrl) {
-          const link = document.createElement('a');
-          link.className = 'source-link';
-          link.href = sourceUrl;
-          link.target = '_blank';
-          link.rel = 'noopener noreferrer';
-          link.textContent = 'View supplier product \u2197';
-          cardActions.append(link);
-        }
-        body.append(cardActions);
-        li.append(media, body);
+        const open = document.createElement('span');
+        open.className = 'imported-product-open';
+        open.textContent = 'Open product →';
+        body.append(heading, facts, open);
+        link.append(media, body);
+        li.append(link);
         ul.append(li);
       }
       list.append(ul);
     }
+  }
+
+  function renderImportedProduct(
+    current: WorkspaceSnapshot,
+    candidate: WorkspaceSnapshot['candidates'][number],
+    status = `Updated ${cacheTime(current.fetchedAt)}`,
+  ) {
+    stopCarousels();
+    activeView = 'imported';
+    app.innerHTML = `<section class="workspace imported-product-page">
+      <div class="product-page-nav"></div>
+      <div class="workspace-heading"><div><p class="eyebrow">Imported product</p><h1></h1></div><div class="actions"></div></div>
+      <p class="account"></p>
+      <section class="panel product-detail-panel"><div class="product-detail-hero"></div><div class="product-detail-content"></div></section>
+      <p class="footnote refresh-status" role="status"></p>
+      <p class="footnote">Costs, stock, and shipping are timestamped supplier estimates. Market demand and margin still need review.</p>
+    </section>`;
+    const back = document.createElement('a');
+    back.className = 'product-page-back';
+    back.href = `${window.location.pathname}${window.location.search}`;
+    back.textContent = '← Back to imported products';
+    back.addEventListener('click', (event) => {
+      event.preventDefault();
+      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
+      renderWorkspace(current);
+    });
+    app.querySelector('.product-page-nav')!.append(back);
+    app.querySelector('h1')!.textContent = candidate.products.title;
+    app.querySelector('.account')!.textContent = `Signed in as ${current.access.email}`;
+    app.querySelector('.refresh-status')!.textContent = status;
+    action('Refresh', () => { void refresh({ force: true, background: true }); });
+    action('Sign out', () => { void signOut(); });
+
+    const productQuotes = productShippingQuotes(candidate);
+    const shipping = shippingOverview(productQuotes);
+    const hero = app.querySelector('.product-detail-hero')!;
+    const media = imageCarousel(
+      candidate.products.title,
+      [...candidate.products.image_urls, candidate.products.image_url],
+      'product-detail-media',
+    );
+    const summary = document.createElement('div');
+    summary.className = 'product-detail-summary';
+    const identity = document.createElement('div');
+    identity.className = 'candidate-heading';
+    const supplier = document.createElement('p');
+    supplier.className = 'candidate-supplier';
+    supplier.textContent = `${candidate.supplier_products.suppliers.name} · ${candidate.supplier_products.external_product_id}`;
+    const candidateStatus = document.createElement('span');
+    candidateStatus.className = 'badge';
+    candidateStatus.textContent = candidate.status.replaceAll('_', ' ');
+    identity.append(supplier, candidateStatus);
+    const facts = document.createElement('dl');
+    facts.className = 'candidate-facts product-detail-facts';
+    facts.append(
+      metric('Supplier cost', supplierCost(candidate)),
+      metric('Variants', String(candidate.supplier_products.supplier_variants.length)),
+      metric('Reported stock', supplierStock(candidate)),
+      metric('Last checked', new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium', timeStyle: 'short',
+      }).format(new Date(candidate.supplier_products.last_seen_at))),
+      metric('Shipping', shipping.status),
+      metric('Est. shipping · 1 unit', shipping.cost),
+    );
+    const cardActions = document.createElement('div');
+    cardActions.className = 'card-actions';
+    const shippingControls = shippingScanControls({ candidateId: candidate.id }, productQuotes.length);
+    cardActions.append(shippingControls.button, shippingControls.status);
+    const sourceUrl = safeSourceUrl(candidate.supplier_products.source_url);
+    if (sourceUrl) {
+      const source = document.createElement('a');
+      source.className = 'source-link';
+      source.href = sourceUrl;
+      source.target = '_blank';
+      source.rel = 'noopener noreferrer';
+      source.textContent = 'View supplier product ↗';
+      cardActions.append(source);
+    }
+    summary.append(identity, facts, cardActions);
+    hero.append(media, summary);
+
+    const content = app.querySelector('.product-detail-content')!;
+    const quoteDetails = shippingQuoteDetails(productQuotes);
+    if (quoteDetails) content.append(quoteDetails);
+    content.append(
+      reviewEditor(candidate, true),
+      shopifyListingPanel(candidate, current.salesChannels),
+    );
+  }
+
+  function renderCurrentRoute(
+    current: WorkspaceSnapshot,
+    status = `Updated ${cacheTime(current.fetchedAt)}`,
+  ) {
+    const route = readWorkspaceRoute(window.location.hash);
+    if (route.kind === 'workspace') {
+      renderWorkspace(current, status);
+      return;
+    }
+    const candidate = current.candidates.find((item) => item.id === route.candidateId);
+    if (candidate) {
+      renderImportedProduct(current, candidate, status);
+      return;
+    }
+    message('Imported product not found', 'This product is not available in the current workspace data.');
+    action('Back to imported products', () => {
+      activeView = 'imported';
+      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
+      renderWorkspace(current);
+    });
   }
 
   async function performRefresh(background: boolean) {
@@ -1236,11 +1347,11 @@ async function start() {
       ]);
       if (current !== revision) return;
       snapshot = { access, candidates, discoveryCandidates, salesChannels, fetchedAt: Date.now() };
-      renderWorkspace(snapshot);
+      renderCurrentRoute(snapshot);
     } catch (error) {
       if (current !== revision) return;
       if (preserveWorkspace && snapshot) {
-        renderWorkspace(snapshot, `Refresh failed. Showing data from ${cacheTime(snapshot.fetchedAt)}.`);
+        renderCurrentRoute(snapshot, `Refresh failed. Showing data from ${cacheTime(snapshot.fetchedAt)}.`);
         return;
       }
       message('Workspace unavailable', error instanceof Error ? error.message : 'Please try again shortly.');
@@ -1251,7 +1362,7 @@ async function start() {
 
   function refresh(options: { force?: boolean; background?: boolean } = {}) {
     if (!options.force && isWorkspaceSnapshotFresh(snapshot)) {
-      if (!app.querySelector('.workspace')) renderWorkspace(snapshot);
+      if (!app.querySelector('.workspace')) renderCurrentRoute(snapshot);
       return Promise.resolve();
     }
     if (refreshInFlight) return refreshInFlight;
@@ -1282,6 +1393,9 @@ async function start() {
     if (!document.hidden && !isWorkspaceSnapshotFresh(snapshot)) {
       void refresh({ background: snapshot !== null });
     }
+  });
+  window.addEventListener('hashchange', () => {
+    if (snapshot) renderCurrentRoute(snapshot);
   });
 }
 
