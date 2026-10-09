@@ -47,7 +47,7 @@ Plans contain one to four jobs. Jobs run sequentially so one scheduled process c
 }
 ```
 
-Each query is arbitrary and therefore category selection is dynamic. The profile is an explicit, version-controlled rule set; current choices are `generic`, `pets`, and `home-products`. An optional `filters` object can narrow a job by CJ category ID, warehouse country, cost range, minimum inventory, verified stock, product flag, free shipping, certification, or customization. Unknown fields and duplicate jobs are rejected.
+Each query is arbitrary and therefore category selection is dynamic. The current `generic`, `pets`, and `home-products` profiles are version-controlled scoring and eligibility presets, not an allowed-category list. `generic` can evaluate a query from any category. Add focused profiles in this ecommerce repository as real-run evidence shows that a category needs different synonyms, exclusions, thresholds, weights, or risk rules. An optional `filters` object can narrow a job by CJ category ID, warehouse country, cost range, minimum inventory, verified stock, product flag, free shipping, certification, or customization. Unknown fields and duplicate jobs are rejected.
 
 ORION should pass seed intent and scheduling only. It should not construct supplier requests, alter scores, pass secrets on the command line, write ecommerce tables, or parse CJ payloads.
 
@@ -69,3 +69,7 @@ The stored unique-candidate count can be lower than 300 because the same supplie
 ## Pilot cadence
 
 For four weeks, schedule one two-job plan on Monday, Wednesday, and Friday at 02:00 Europe/Amsterdam. Rotate seed queries and review false positives, missed products, evidence coverage, and supplier-field quality. Once thresholds are stable, move broad discovery to Tuesday and Saturday. Later product maintenance should receive the earlier nightly slot and discovery should run afterward.
+
+## Runtime estimate
+
+The CJ client serializes requests with at least 1.1 seconds between request starts. A full 32-operation job therefore has a theoretical supplier-throttle floor of roughly 35 seconds before network, Ollama, and persistence time. In normal conditions, reserve one to three minutes for one job and two to five minutes for the recommended two-job plan. Slow provider responses can extend this substantially, so ORION should retain the 30-minute outer timeout. A two-job run starting at 02:00 should normally finish around 02:02–02:05 and is forcibly bounded to finish or fail by 02:30.
