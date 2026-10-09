@@ -20,9 +20,11 @@ npm run cj:search -- "cat toy"   # ranked preview; no database writes
 npm run cj:import -- PRODUCT_ID  # atomic candidate ingestion
 npm run cj:discover -- "cat toy" --profile=pets  # budgeted V2 run persisted to Supabase
 npm run discovery:run -- "cat toy" --profile=pets --json  # stable one-shot worker contract
+npm run discovery:batch -- --plan config/discovery-plan.example.json --validate
 ```
 
 See [product discovery and search](docs/discovery.md) for current behavior and the [Discovery V2 implementation specification](docs/discovery-v2-implementation-spec.md) for the approved next-stage brief.
+See [ORION discovery integration](docs/orion-integration.md) for the bounded plan contract that an external scheduler can call without importing or owning ecommerce logic.
 
 Without configuration the page displays **Workspace setup pending**. To enable sign-in, follow [Supabase setup](docs/setup.md). No demo credentials, users, or business records are created.
 

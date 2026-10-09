@@ -1,14 +1,9 @@
 import './only';
-import { executeDiscoveryRun } from '../application/discovery/execute-discovery-run';
-import { resolveDiscoveryProfile } from '../application/discovery/profiles';
-import { normalizeSearchText } from '../application/discovery/query-terms';
-import { ConfigurationError } from '../config/validation';
-import { readCjConfig, readOptionalOllamaConfig, readServerConfig } from './config';
-import { createPrivilegedDatabase } from './db/supabase';
-import { SupabaseDiscoveryRunRepository } from './discovery/supabase-discovery-run-repository';
-import { OllamaQueryExpansionProvider } from './integrations/query-expansion/ollama';
-import { CjSupplierAdapter } from './integrations/suppliers/cj/adapter';
-import { CjClient } from './integrations/suppliers/cj/client';
+import {
+  createCjDiscoveryJobRunner,
+  discoveryJobOutputSchema,
+  safeDiscoveryErrorMessage,
+} from './discovery/cj-discovery-job';
 
 function argumentsFrom(values: string[]) {
   let profileId = 'generic';
@@ -34,48 +29,18 @@ function argumentsFrom(values: string[]) {
   return { profileId, query: query.join(' ').trim(), refresh, json };
 }
 
-const outputSchema = 'product-discovery-job.v1';
 const jsonRequested = process.argv.slice(2).includes('--json');
 
 try {
   const input = argumentsFrom(process.argv.slice(2));
-  const profile = resolveDiscoveryProfile(input.profileId);
-  if (!input.query || !profile) {
+  if (!input.query) {
     throw new Error('Usage: npm run discovery:run -- "cat toy" --profile=pets [--refresh] [--json]');
   }
-  const cjConfig = readCjConfig(process.env);
-  const serverConfig = readServerConfig(process.env);
-  const ollamaConfig = readOptionalOllamaConfig(process.env);
-  const adapter = new CjSupplierAdapter(new CjClient(cjConfig.apiKey));
-  const repository = new SupabaseDiscoveryRunRepository(createPrivilegedDatabase(serverConfig));
-  const expansionProvider = ollamaConfig
-    ? new OllamaQueryExpansionProvider(ollamaConfig.baseUrl, ollamaConfig.model)
-    : undefined;
-  const result = await executeDiscoveryRun({
-    adapter,
-    repository,
-    ...(expansionProvider ? { expansionProvider } : {}),
-  }, {
+  const { summary, execution: result } = await createCjDiscoveryJobRunner(process.env)({
     query: input.query,
-    profile,
+    profileId: input.profileId,
     refresh: input.refresh,
   });
-  const summary = {
-    schema: outputSchema,
-    provider: adapter.provider,
-    profileId: profile.id,
-    originalQuery: result.run?.originalQuery ?? normalizeSearchText(input.query),
-    source: result.source,
-    status: result.run?.status ?? 'reused',
-    runId: result.persisted.runId,
-    candidateCount: result.persisted.candidateCount,
-    observationCount: result.persisted.observationCount,
-    eligibleCandidateCount: result.run?.metrics.eligibleCandidateCount ?? null,
-    apiRequestsUsed: result.run?.metrics.apiRequestsUsed ?? 0,
-    warnings: result.run?.warnings ?? [],
-    startedAt: result.run?.startedAt ?? null,
-    completedAt: result.run?.completedAt ?? null,
-  };
   if (input.json) {
     console.log(JSON.stringify(summary));
   } else if (result.source === 'cache') {
@@ -106,13 +71,9 @@ try {
   }
   if (result.run?.status === 'failed') process.exitCode = 1;
 } catch (error) {
-  const safeInputError = error instanceof Error &&
-    /^(Usage:|Unknown option:|Discovery budget|Discovery profile)/.test(error.message);
-  const message = error instanceof ConfigurationError || safeInputError
-    ? error.message
-    : 'CJ discovery failed. Check provider access, Supabase migration, and server configuration.';
+  const message = safeDiscoveryErrorMessage(error);
   console.error(jsonRequested
-    ? JSON.stringify({ schema: outputSchema, status: 'failed', error: message })
+    ? JSON.stringify({ schema: discoveryJobOutputSchema, status: 'failed', error: message })
     : message);
   process.exitCode = 1;
 }

@@ -1,0 +1,14 @@
+{
+  "schema": "product-discovery-plan.v1",
+  "planId": "pets-pilot",
+  "jobs": [
+    {
+      "query": "interactive cat toy",
+      "profileId": "pets"
+    },
+    {
+      "query": "slow feeder",
+      "profileId": "pets"
+    }
+  ]
+}

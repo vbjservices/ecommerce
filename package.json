@@ -17,8 +17,9 @@
     "health": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx src/server/health-cli.ts",
     "cj:import": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx src/server/ingest-cj-product-cli.ts",
     "cj:search": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx src/server/search-cj-products-cli.ts",
-    "cj:discover": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx src/server/discover-cj-products-cli.ts",
-    "discovery:run": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx src/server/discover-cj-products-cli.ts"
+    "cj:discover": "node --import tsx scripts/run-server-cli.mjs src/server/discover-cj-products-cli.ts",
+    "discovery:run": "node --import tsx scripts/run-server-cli.mjs src/server/discover-cj-products-cli.ts",
+    "discovery:batch": "node --import tsx scripts/run-server-cli.mjs src/server/run-discovery-plan-cli.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.116.0",

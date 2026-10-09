@@ -32,6 +32,8 @@ It requires the Discovery V2 migration and trusted `CJ_API_KEY`, `SUPABASE_URL`,
 
 `OLLAMA_BASE_URL` and `OLLAMA_MODEL` optionally enable local-model query expansion. Both are server-only settings. Deterministic expansion always runs, model output is schema-validated and bounded, and an unavailable or malformed model produces a warning without stopping supplier discovery.
 
+For scheduled operation, `discovery:batch` accepts a strict `product-discovery-plan.v1` JSON file containing one to four sequential jobs. Queries and optional CJ category, warehouse, cost, and inventory filters can vary per job, while profiles and budgets remain controlled by this repository. The command emits one `product-discovery-batch.v1` JSON result and returns a nonzero exit when any job fails. See [ORION discovery integration](orion-integration.md).
+
 Leave both Ollama variables unset for now. The worker remains fully operational with deterministic query expansion. Connecting the local model later requires only those two server settings; it does not require importing or linking the ORION repository. The model expands queries and may later summarize structured evidence, but it does not decide eligibility or invent scoring evidence.
 
 ## Query planning and acquisition
