@@ -332,28 +332,30 @@ async function start() {
       : `${observation.delivery_days_min}–${observation.delivery_days_max} days`;
   }
 
+  function helpOverlay(label: string, explanation: string) {
+    const help = document.createElement('span');
+    help.className = 'field-help-overlay';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'field-help-trigger';
+    button.textContent = 'i';
+    button.setAttribute('aria-label', `About ${label}`);
+    const tooltip = document.createElement('span');
+    tooltip.className = 'field-help-tooltip';
+    tooltip.id = `field-help-${++tooltipSequence}`;
+    tooltip.setAttribute('role', 'tooltip');
+    tooltip.textContent = explanation;
+    button.setAttribute('aria-describedby', tooltip.id);
+    help.append(button, tooltip);
+    return help;
+  }
+
   function metric(label: string, value: string, explanation?: string) {
     const item = document.createElement('div');
     const term = document.createElement('dt');
     const detail = document.createElement('dd');
     term.append(document.createTextNode(label));
-    if (explanation) {
-      const help = document.createElement('span');
-      help.className = 'field-help-overlay';
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'field-help-trigger';
-      button.textContent = 'i';
-      button.setAttribute('aria-label', `About ${label}`);
-      const tooltip = document.createElement('span');
-      tooltip.className = 'field-help-tooltip';
-      tooltip.id = `field-help-${++tooltipSequence}`;
-      tooltip.setAttribute('role', 'tooltip');
-      tooltip.textContent = explanation;
-      button.setAttribute('aria-describedby', tooltip.id);
-      help.append(button, tooltip);
-      term.append(help);
-    }
+    if (explanation) term.append(helpOverlay(label, explanation));
     detail.textContent = value;
     item.append(term, detail);
     return item;
@@ -704,7 +706,13 @@ async function start() {
     const assumptions = document.createElement('fieldset');
     assumptions.className = 'review-assumptions';
     const assumptionsLegend = document.createElement('legend');
-    assumptionsLegend.textContent = 'Pricing assumptions';
+    assumptionsLegend.append(
+      document.createTextNode('Pricing assumptions'),
+      helpOverlay(
+        'pricing assumptions',
+        `These inputs turn supplier and shipping costs into retail estimates. The exchange rate converts ${costCurrency} costs to ${retailCurrency}; the reserve allows for variable costs such as payment fees, VAT, advertising, and returns. They are planning assumptions, not confirmed expenses or a guaranteed margin.`,
+      ),
+    );
     const fxLabel = document.createElement('label');
     fxLabel.textContent = `${costCurrency} to ${retailCurrency} exchange rate`;
     const fxInput = document.createElement('input');

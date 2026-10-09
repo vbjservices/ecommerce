@@ -48,6 +48,17 @@ npm run --silent discovery:run -- "cat toy" --profile=pets --json
 
 The command performs one bounded run, persists it, emits the `product-discovery-job.v1` JSON result, and exits. `--refresh` bypasses the six-hour cache. ORION scheduling, process timeouts, and retries remain outside this repository. Ollama remains disabled when its two optional environment variables are absent.
 
+## Proposed operating cadence
+
+Use a controlled pilot before making discovery a nightly high-volume job:
+
+1. For the first four weeks, run discovery on Monday, Wednesday, and Friday at 02:00 Europe/Amsterdam.
+2. Rotate two seed queries per run instead of repeating one category. Keep the default budgets and leave `--refresh` off unless a deliberately new observation is required.
+3. Review `PASS`, `REVIEW`, false-positive, and missed-product outcomes the following morning and record changes needed in the profile rather than changing several weights at once.
+4. After the rules are stable, reduce broad discovery to Tuesday and Saturday nights. Product maintenance will eventually run in smaller nightly batches and should take scheduling priority because live and approved products need fresher evidence than new-candidate searches.
+
+ORION should own the clock, timeout, process supervision, and notification policy. This repository should continue to expose bounded one-shot commands that exit with a machine-readable result.
+
 ## Next discovery work
 
 1. Run several real queries and inspect false positives, false negatives, provider result overlap, data coverage, and CJ field reliability.
