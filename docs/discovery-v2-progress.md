@@ -1,6 +1,6 @@
 # Discovery V2 progress
 
-**Last updated:** 2026-09-30
+**Last updated:** 2026-10-09
 
 **Detailed brief:** [Discovery V2 implementation specification](discovery-v2-implementation-spec.md)
 
@@ -27,7 +27,8 @@ This file tracks implementation state so proposed capabilities are not confused 
 - Six-hour persisted-run cache with an explicit `--refresh` override.
 - Transactional persistence for runs, queries, candidates, occurrences, supplier observations, and private raw pages.
 - RLS-protected normalized reads, no browser writes, and restricted append-only persistence boundaries.
-- Trusted `cj:discover` CLI application entry point.
+- Trusted `cj:discover` CLI and versioned `discovery:run --json` one-shot worker entry points.
+- Reusable `executeDiscoveryRun(...)` application boundary for cache lookup, bounded supplier acquisition, and atomic persistence.
 - Dashboard V2 shortlist with evidence, unknowns, risks, and safe supplier links.
 - Separate Discovery and Imported products dashboard tabs with independent empty states and counts.
 - Budgeted shortlist media enrichment that retains CJ's complete normalized image set.
@@ -37,17 +38,15 @@ This file tracks implementation state so proposed capabilities are not confused 
 - Authenticated one-click CJ import through an internal-membership-gated Supabase Edge Function.
 - Tests covering profiles, deterministic and optional model expansion, malformed/unavailable model output, relevance, exclusions, strategies, pagination, budgets, duplicates, partial failures, second-niche reuse, atomic persistence, privacy, and migration compatibility.
 
-## Deployment step still required
+## Operational entry point
 
-Apply `supabase/migrations/20260930000300_product_image_galleries.sql` to hosted Supabase. Then collect gallery data with a fresh run:
+The product image, discovery, import, shipping, review, OAuth, and Shopify draft migrations and functions have been applied to the current ecommerce Supabase project. A trusted machine with `CJ_API_KEY`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` can run:
 
 ```sh
-npm run cj:discover -- "cat toy" --profile=pets --refresh
+npm run --silent discovery:run -- "cat toy" --profile=pets --json
 ```
 
-The configuration version is now `discovery-v2.1`, so the first command after deployment also bypasses older cached run keys without `--refresh`. Reimport an existing product to refresh its imported-product gallery if its historical raw snapshot did not contain `productImageSet`.
-
-Set the Edge Function secret `CJ_API_KEY` and deploy both `import-cj-product` and `quote-cj-shipping`. Imported products progressively record current CJ estimates across the supplier's 249-country catalog; discovery results remain `Not checked` until variants are imported.
+The command performs one bounded run, persists it, emits the `product-discovery-job.v1` JSON result, and exits. `--refresh` bypasses the six-hour cache. ORION scheduling, process timeouts, and retries remain outside this repository. Ollama remains disabled when its two optional environment variables are absent.
 
 ## Next discovery work
 

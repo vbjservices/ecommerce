@@ -1,9 +1,7 @@
 import './only';
-import { DISCOVERY_SCORING_VERSION } from '../application/discovery/assess-product';
-import { DISCOVERY_CONFIGURATION_VERSION } from '../application/discovery/expand-query';
-import { normalizeSearchText } from '../application/discovery/query-terms';
-import { runProductDiscovery } from '../application/discovery/run-product-discovery';
+import { executeDiscoveryRun } from '../application/discovery/execute-discovery-run';
 import { resolveDiscoveryProfile } from '../application/discovery/profiles';
+import { normalizeSearchText } from '../application/discovery/query-terms';
 import { ConfigurationError } from '../config/validation';
 import { readCjConfig, readOptionalOllamaConfig, readServerConfig } from './config';
 import { createPrivilegedDatabase } from './db/supabase';
@@ -15,6 +13,7 @@ import { CjClient } from './integrations/suppliers/cj/client';
 function argumentsFrom(values: string[]) {
   let profileId = 'generic';
   let refresh = false;
+  let json = false;
   const query: string[] = [];
   for (let index = 0; index < values.length; index++) {
     const value = values[index]!;
@@ -24,20 +23,25 @@ function argumentsFrom(values: string[]) {
       profileId = values[++index] ?? '';
     } else if (value === '--refresh') {
       refresh = true;
+    } else if (value === '--json') {
+      json = true;
     } else if (value.startsWith('--')) {
       throw new Error(`Unknown option: ${value}`);
     } else {
       query.push(value);
     }
   }
-  return { profileId, query: query.join(' ').trim(), refresh };
+  return { profileId, query: query.join(' ').trim(), refresh, json };
 }
+
+const outputSchema = 'product-discovery-job.v1';
+const jsonRequested = process.argv.slice(2).includes('--json');
 
 try {
   const input = argumentsFrom(process.argv.slice(2));
   const profile = resolveDiscoveryProfile(input.profileId);
   if (!input.query || !profile) {
-    throw new Error('Usage: npm run cj:discover -- "cat toy" --profile=pets');
+    throw new Error('Usage: npm run discovery:run -- "cat toy" --profile=pets [--refresh] [--json]');
   }
   const cjConfig = readCjConfig(process.env);
   const serverConfig = readServerConfig(process.env);
@@ -47,26 +51,40 @@ try {
   const expansionProvider = ollamaConfig
     ? new OllamaQueryExpansionProvider(ollamaConfig.baseUrl, ollamaConfig.model)
     : undefined;
-  const cached = input.refresh ? null : await repository.findFresh({
-    providerCode: adapter.provider,
-    profileId: profile.id,
-    originalQuery: normalizeSearchText(input.query),
-    configurationVersion: DISCOVERY_CONFIGURATION_VERSION,
-    scoringVersion: DISCOVERY_SCORING_VERSION,
-    now: new Date().toISOString(),
+  const result = await executeDiscoveryRun({
+    adapter,
+    repository,
+    ...(expansionProvider ? { expansionProvider } : {}),
+  }, {
+    query: input.query,
+    profile,
+    refresh: input.refresh,
   });
-  if (cached) {
+  const summary = {
+    schema: outputSchema,
+    provider: adapter.provider,
+    profileId: profile.id,
+    originalQuery: result.run?.originalQuery ?? normalizeSearchText(input.query),
+    source: result.source,
+    status: result.run?.status ?? 'reused',
+    runId: result.persisted.runId,
+    candidateCount: result.persisted.candidateCount,
+    observationCount: result.persisted.observationCount,
+    eligibleCandidateCount: result.run?.metrics.eligibleCandidateCount ?? null,
+    apiRequestsUsed: result.run?.metrics.apiRequestsUsed ?? 0,
+    warnings: result.run?.warnings ?? [],
+    startedAt: result.run?.startedAt ?? null,
+    completedAt: result.run?.completedAt ?? null,
+  };
+  if (input.json) {
+    console.log(JSON.stringify(summary));
+  } else if (result.source === 'cache') {
     console.log(
-      `Reused fresh discovery run ${cached.runId} with ${cached.candidateCount} candidates. ` +
-      'Pass --refresh to collect new supplier observations.',
+      `Reused fresh discovery run ${result.persisted.runId} with ` +
+      `${result.persisted.candidateCount} candidates. Pass --refresh to collect new supplier observations.`,
     );
   } else {
-    const run = await runProductDiscovery(adapter, { query: input.query, profile }, expansionProvider);
-    const saved = await repository.save(
-      { code: adapter.provider, name: adapter.providerName },
-      run,
-    );
-    console.table(run.candidates.slice(0, 10).map((candidate) => ({
+    console.table(result.run.candidates.slice(0, 10).map((candidate) => ({
       eligibility: candidate.assessment.eligibility.status,
       score: candidate.assessment.score,
       confidence: `${candidate.assessment.confidence}%`,
@@ -81,17 +99,20 @@ try {
       risks: candidate.assessment.risks.map((risk) => risk.ruleId).join(', '),
     })));
     console.log(
-      `Saved discovery run ${saved.runId}: ${saved.candidateCount} candidates, ` +
-      `${saved.observationCount} observations, ${run.metrics.apiRequestsUsed} CJ requests, ` +
-      `status ${run.status}.`,
+      `Saved discovery run ${result.persisted.runId}: ${result.persisted.candidateCount} candidates, ` +
+      `${result.persisted.observationCount} observations, ${result.run.metrics.apiRequestsUsed} CJ requests, ` +
+      `status ${result.run.status}.`,
     );
-    if (run.status === 'failed') process.exitCode = 1;
   }
+  if (result.run?.status === 'failed') process.exitCode = 1;
 } catch (error) {
   const safeInputError = error instanceof Error &&
     /^(Usage:|Unknown option:|Discovery budget|Discovery profile)/.test(error.message);
-  console.error(error instanceof ConfigurationError || safeInputError
+  const message = error instanceof ConfigurationError || safeInputError
     ? error.message
-    : 'CJ discovery failed. Check provider access, Supabase migration, and server configuration.');
+    : 'CJ discovery failed. Check provider access, Supabase migration, and server configuration.';
+  console.error(jsonRequested
+    ? JSON.stringify({ schema: outputSchema, status: 'failed', error: message })
+    : message);
   process.exitCode = 1;
 }

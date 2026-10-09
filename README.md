@@ -19,6 +19,7 @@ Trusted CJ tools use server-only environment values:
 npm run cj:search -- "cat toy"   # ranked preview; no database writes
 npm run cj:import -- PRODUCT_ID  # atomic candidate ingestion
 npm run cj:discover -- "cat toy" --profile=pets  # budgeted V2 run persisted to Supabase
+npm run discovery:run -- "cat toy" --profile=pets --json  # stable one-shot worker contract
 ```
 
 See [product discovery and search](docs/discovery.md) for current behavior and the [Discovery V2 implementation specification](docs/discovery-v2-implementation-spec.md) for the approved next-stage brief.

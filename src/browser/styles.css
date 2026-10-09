@@ -72,6 +72,11 @@ button span { margin-left: 12px; }
 .candidate-facts div { min-width: 0; }
 .candidate-facts dt { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
 .candidate-facts dd { font-size: 14px; font-weight: 600; margin: 4px 0 0; overflow-wrap: anywhere; }
+.field-help-overlay { position: relative; display: inline-flex; margin-left: 6px; vertical-align: middle; text-transform: none; letter-spacing: normal; }
+.field-help-trigger { width: 18px; min-height: 18px; padding: 0; border: 1px solid #9db0b4; border-radius: 999px; color: var(--muted); background: white; font: 700 11px/16px ui-sans-serif, system-ui, sans-serif; }
+.field-help-trigger:hover, .field-help-trigger:focus-visible { color: white; background: var(--accent); border-color: var(--accent); }
+.field-help-tooltip { position: absolute; z-index: 8; left: 50%; bottom: calc(100% + 9px); width: min(260px, 70vw); padding: 9px 11px; border-radius: 7px; color: white; background: #102f34; box-shadow: 0 8px 24px #102f3433; font-size: 12px; font-weight: 500; line-height: 1.4; text-align: left; text-transform: none; letter-spacing: normal; opacity: 0; pointer-events: none; transform: translate(-50%, 4px); transition: opacity 140ms ease, transform 140ms ease; }
+.field-help-overlay:hover .field-help-tooltip, .field-help-overlay:focus-within .field-help-tooltip { opacity: 1; transform: translate(-50%, 0); }
 .source-link { color: var(--accent); font-size: 14px; font-weight: 650; justify-self: start; }
 .discovery-list { list-style: none; margin: 24px 0 0; padding: 0; }
 .discovery-card { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 20px; padding: 24px 0; border-top: 1px solid var(--border); }

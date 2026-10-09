@@ -18,9 +18,21 @@ The durable V2 entry point is:
 npm run cj:discover -- "cat toy" --profile=pets
 ```
 
+The same engine is exposed through the orchestration-ready one-shot command:
+
+```sh
+npm run --silent discovery:run -- "cat toy" --profile=pets --json
+```
+
+`discovery:run` is the stable job boundary. It starts one bounded supplier-discovery run, reuses a fresh cached run unless `--refresh` is passed, persists the result to Supabase, prints one JSON object, and exits. The output schema is `product-discovery-job.v1` and includes the persisted run ID, status, candidate and observation counts, eligible count, API requests used, and sanitized warnings. It returns exit code `0` for a cached, completed, or completed-with-warnings run and `1` for invalid configuration or a failed run. It never prints configured keys.
+
+An external scheduler can launch this command as a child process and stop it using normal process termination. The worker is deliberately not a daemon and does not contain a cron schedule, ORION imports, shared repository paths, or Mac-specific assumptions. ORION can later choose queries, launch the command, retain its JSON output, enforce a timeout, and retry according to its own night-shift policy.
+
 It requires the Discovery V2 migration and trusted `CJ_API_KEY`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` values. The `--profile` option accepts `generic`, `pets`, or `home-products`. Profiles configure synonyms, exclusions, category hints, thresholds, enabled reusable risk rules, and scoring weights; the pipeline contains no pet-specific branches.
 
 `OLLAMA_BASE_URL` and `OLLAMA_MODEL` optionally enable local-model query expansion. Both are server-only settings. Deterministic expansion always runs, model output is schema-validated and bounded, and an unavailable or malformed model produces a warning without stopping supplier discovery.
+
+Leave both Ollama variables unset for now. The worker remains fully operational with deterministic query expansion. Connecting the local model later requires only those two server settings; it does not require importing or linking the ORION repository. The model expands queries and may later summarize structured evidence, but it does not decide eligibility or invent scoring evidence.
 
 ## Query planning and acquisition
 
@@ -118,6 +130,8 @@ Discovery cards show **Worldwide · Not checked** because supplier variants are 
 
 CJ listing activity is not verified sales. CJ Trending is not proof of market demand. CJ inventory is not consumer popularity. External demand is not measured, and profitability is not proven.
 
-The discovery slice itself does not schedule recurring runs, calculate landed cost, scrape market sources, publish products, maintain listings, purchase inventory, fulfill orders, or integrate with the external orchestrator. Destination quotes and landed-cost review now happen after shortlist discovery through the separate shipping and imported-product review workflows.
+The current worker searches CJ's supplier catalog through its API. It does not yet search the general web or measure Google, social, advertising, marketplace, review, or competitor demand. Those sources require separate normalized research adapters and timestamped evidence so their facts can be compared without leaking source-specific payloads into scoring.
 
-The next discovery work should use real persisted runs to calibrate thresholds and scoring, add variant-quality enrichment for the strongest candidates, and improve the dashboard's run-level filtering. Market validation and automated freight refresh remain later workflows with their own evidence sources.
+The discovery slice itself does not schedule recurring runs, calculate landed cost, scrape market sources, publish products, maintain listings, purchase inventory, fulfill orders, or directly integrate with the external orchestrator. Destination quotes and landed-cost review now happen after shortlist discovery through the separate shipping and imported-product review workflows.
+
+The next discovery work should use real persisted runs to calibrate thresholds and scoring, add variant-quality enrichment for the strongest candidates, and improve the dashboard's run-level filtering. After that, a market-validation layer can add web search demand and competitor evidence behind source adapters. The final integration step is letting ORION schedule `discovery:run`; Ollama remains optional query support rather than the job controller.

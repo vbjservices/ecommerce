@@ -73,6 +73,7 @@ async function start() {
   let snapshot: WorkspaceSnapshot | null = null;
   let refreshInFlight: Promise<void> | null = null;
   let activeView: 'discovery' | 'imported' = 'discovery';
+  let tooltipSequence = 0;
 
   function action(label: string, handler: () => void) {
     const button = document.createElement('button');
@@ -331,11 +332,28 @@ async function start() {
       : `${observation.delivery_days_min}–${observation.delivery_days_max} days`;
   }
 
-  function metric(label: string, value: string) {
+  function metric(label: string, value: string, explanation?: string) {
     const item = document.createElement('div');
     const term = document.createElement('dt');
     const detail = document.createElement('dd');
-    term.textContent = label;
+    term.append(document.createTextNode(label));
+    if (explanation) {
+      const help = document.createElement('span');
+      help.className = 'field-help-overlay';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'field-help-trigger';
+      button.textContent = 'i';
+      button.setAttribute('aria-label', `About ${label}`);
+      const tooltip = document.createElement('span');
+      tooltip.className = 'field-help-tooltip';
+      tooltip.id = `field-help-${++tooltipSequence}`;
+      tooltip.setAttribute('role', 'tooltip');
+      tooltip.textContent = explanation;
+      button.setAttribute('aria-describedby', tooltip.id);
+      help.append(button, tooltip);
+      term.append(help);
+    }
     detail.textContent = value;
     item.append(term, detail);
     return item;
@@ -1266,14 +1284,20 @@ async function start() {
     const facts = document.createElement('dl');
     facts.className = 'candidate-facts product-detail-facts';
     facts.append(
-      metric('Supplier cost', supplierCost(candidate)),
-      metric('Variants', String(candidate.supplier_products.supplier_variants.length)),
-      metric('Reported stock', supplierStock(candidate)),
+      metric('Supplier cost', supplierCost(candidate),
+        'The latest CJ supplier price or price range across imported variants. This is not the customer selling price.'),
+      metric('Variants', String(candidate.supplier_products.supplier_variants.length),
+        'The number of supplier variants currently stored for this product, such as colors, sizes, or bundles.'),
+      metric('Reported stock', supplierStock(candidate),
+        'The sum of the latest inventory values CJ reported for the stored variants. Supplier inventory is not proof of customer demand.'),
       metric('Last checked', new Intl.DateTimeFormat(undefined, {
         dateStyle: 'medium', timeStyle: 'short',
-      }).format(new Date(candidate.supplier_products.last_seen_at))),
-      metric('Shipping', shipping.status),
-      metric('Est. shipping · 1 unit', shipping.cost),
+      }).format(new Date(candidate.supplier_products.last_seen_at)),
+      'When the supplier product data was last retrieved. Cost and stock may have changed since this time.'),
+      metric('Shipping', shipping.status,
+        'Destination coverage from stored shipping checks. Unchecked destinations remain unknown rather than unavailable.'),
+      metric('Est. shipping · 1 unit', shipping.cost,
+        'The current one-unit shipping cost range across confirmed destinations. Quotes vary by destination, variant, method, and time.'),
     );
     const cardActions = document.createElement('div');
     cardActions.className = 'card-actions';
