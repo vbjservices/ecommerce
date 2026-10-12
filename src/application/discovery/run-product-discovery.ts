@@ -37,6 +37,7 @@ interface StrategyPlan {
 export interface ProductDiscoveryRequest {
   query: string;
   profile: DiscoveryProfile;
+  categoryKey?: string;
   budget?: DiscoveryBudget;
   filters?: SupplierDiscoveryInput['filters'];
 }
@@ -274,6 +275,7 @@ export async function runProductDiscovery(
   const completedAtMs = clock();
   return {
     profileId: request.profile.id,
+    categoryKey: request.categoryKey ?? request.profile.id,
     originalQuery: expansionResult.queries[0]!.query,
     status,
     configurationVersion: DISCOVERY_CONFIGURATION_VERSION,

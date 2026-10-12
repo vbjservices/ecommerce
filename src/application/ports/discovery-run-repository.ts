@@ -10,6 +10,7 @@ export interface DiscoveryRunRepository {
   findFresh(input: {
     providerCode: string;
     profileId: string;
+    categoryKey: string;
     originalQuery: string;
     configurationVersion: string;
     scoringVersion: string;

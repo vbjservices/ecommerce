@@ -23,6 +23,7 @@ const cachedRun = z.object({
 function payload(run: DiscoveryRunResult) {
   return {
     profile_id: run.profileId,
+    category_key: run.categoryKey,
     original_query: run.originalQuery,
     status: run.status,
     configuration_version: run.configurationVersion,
@@ -94,6 +95,7 @@ export class SupabaseDiscoveryRunRepository implements DiscoveryRunRepository {
   async findFresh(input: {
     providerCode: string;
     profileId: string;
+    categoryKey: string;
     originalQuery: string;
     configurationVersion: string;
     scoringVersion: string;
@@ -103,6 +105,7 @@ export class SupabaseDiscoveryRunRepository implements DiscoveryRunRepository {
       .select('id,metrics,suppliers!inner(code)')
       .eq('suppliers.code', input.providerCode)
       .eq('profile_id', input.profileId)
+      .eq('category_key', input.categoryKey)
       .eq('original_query', input.originalQuery)
       .eq('configuration_version', input.configurationVersion)
       .eq('scoring_version', input.scoringVersion)

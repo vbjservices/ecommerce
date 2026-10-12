@@ -16,6 +16,7 @@ export const discoveryJobOutputSchema = 'product-discovery-job.v1';
 export interface CjDiscoveryJobRequest {
   query: string;
   profileId: string;
+  categoryKey?: string;
   refresh?: boolean;
   filters?: SupplierDiscoveryInput['filters'];
 }
@@ -24,6 +25,7 @@ export interface CjDiscoveryJobSummary {
   schema: typeof discoveryJobOutputSchema;
   provider: string;
   profileId: string;
+  categoryKey: string;
   originalQuery: string;
   source: 'cache' | 'supplier';
   status: 'reused' | 'completed' | 'completed_with_warnings' | 'failed';
@@ -65,6 +67,7 @@ export function createCjDiscoveryJobRunner(env: Record<string, unknown> = proces
     }, {
       query: request.query,
       profile,
+      categoryKey: request.categoryKey ?? profile.id,
       ...(request.refresh === undefined ? {} : { refresh: request.refresh }),
       ...(request.filters === undefined ? {} : { filters: request.filters }),
     });
@@ -72,6 +75,7 @@ export function createCjDiscoveryJobRunner(env: Record<string, unknown> = proces
       schema: discoveryJobOutputSchema,
       provider: adapter.provider,
       profileId: profile.id,
+      categoryKey: result.run?.categoryKey ?? request.categoryKey ?? profile.id,
       originalQuery: result.run?.originalQuery ?? normalizeSearchText(request.query),
       source: result.source,
       status: result.run?.status ?? 'reused',

@@ -22,6 +22,7 @@ const filters = z.object({
 const job = z.object({
   query: z.string().trim().min(1).max(200),
   profileId: z.string().trim().min(1).max(100).default('generic'),
+  categoryKey: z.string().trim().regex(/^[a-z0-9][a-z0-9-]{0,99}$/).optional(),
   refresh: z.boolean().optional(),
   filters: filters.optional(),
 }).strict();
@@ -34,7 +35,8 @@ const plan = z.object({
   const seen = new Set<string>();
   value.jobs.forEach((item, index) => {
     const identity = JSON.stringify([
-      normalizeSearchText(item.query), item.profileId, item.filters ?? {}, item.refresh ?? false,
+      normalizeSearchText(item.query), item.profileId, item.categoryKey ?? item.profileId,
+      item.filters ?? {}, item.refresh ?? false,
     ]);
     if (seen.has(identity)) {
       context.addIssue({

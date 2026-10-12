@@ -100,6 +100,10 @@ test('discovery persistence is atomic, retains provenance, and keeps raw pages p
   try {
     await assert.rejects(asRole(db, 'authenticated', member, () =>
       db.query(rpcSql, ['cj', 'CJdropshipping', JSON.stringify(runPayload())])), /permission denied/);
+    await assert.rejects(asRole(db, 'service_role', '', () =>
+      db.query('select * from public.persist_discovery_run_v1($1, $2, $3::jsonb)', [
+        'cj', 'CJdropshipping', JSON.stringify(runPayload()),
+      ])), /permission denied/);
     await assert.rejects(asRole(db, 'service_role', '', () => db.exec(
       "insert into public.discovery_runs(supplier_id,profile_id,original_query,status,configuration_version,scoring_version,started_at,completed_at,cache_expires_at,budget,metrics) select id,'pets','bypass','completed','v','v',now(),now(),now(),'{}','{}' from public.suppliers limit 1",
     )), /permission denied/);
@@ -139,6 +143,31 @@ test('discovery persistence is atomic, retains provenance, and keeps raw pages p
       image_urls: ['https://example.com/cat.jpg', 'https://example.com/cat-side.jpg'],
     }]);
 
+    const firstCatalog = await asRole(db, 'authenticated', member, () => db.query<{
+      external_product_id: string; category_key: string; seen_count: number; score: string;
+    }>('select external_product_id,category_key,seen_count,score::text from public.discovery_catalog'));
+    assert.deepEqual(firstCatalog.rows, [{
+      external_product_id: 'cj-product-1', category_key: 'pets', seen_count: 1, score: '82.00',
+    }]);
+
+    const later = runPayload();
+    later.started_at = '2026-10-01T10:00:00Z';
+    later.completed_at = '2026-10-01T10:01:00Z';
+    later.cache_expires_at = '2026-10-01T16:01:00Z';
+    Object.assign(later, { category_key: 'pet-enrichment' });
+    later.candidates[0]!.score = 88;
+    await asRole(db, 'service_role', '', () =>
+      db.query(rpcSql, ['cj', 'CJdropshipping', JSON.stringify(later)]));
+    const deduplicatedCatalog = await asRole(db, 'authenticated', member, () => db.query<{
+      external_product_id: string; category_keys: string[]; seen_count: number; score: string;
+    }>('select external_product_id,category_keys,seen_count,score::text from public.discovery_catalog'));
+    assert.deepEqual(deduplicatedCatalog.rows, [{
+      external_product_id: 'cj-product-1',
+      category_keys: ['pet-enrichment', 'pets'],
+      seen_count: 2,
+      score: '88.00',
+    }]);
+
     const invalid = runPayload();
     invalid.candidates.push(structuredClone(invalid.candidates[0]!));
     await assert.rejects(asRole(db, 'service_role', '', () =>
@@ -146,7 +175,7 @@ test('discovery persistence is atomic, retains provenance, and keeps raw pages p
     const runsAfterFailure = await db.query<{ count: number }>(
       'select count(*)::int as count from public.discovery_runs',
     );
-    assert.equal(runsAfterFailure.rows[0]!.count, 1);
+    assert.equal(runsAfterFailure.rows[0]!.count, 2);
   } finally {
     await db.close();
   }

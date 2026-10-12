@@ -11,6 +11,10 @@ export interface WorkspaceSnapshot {
   access: Extract<Access, { status: 'authorized' }>;
   candidates: CandidateSummary[];
   discoveryCandidates: DiscoveryCandidateSummary[];
+  discoveryTotal: number;
+  discoveryPage: number;
+  discoveryPageSize: number;
+  discoveryCategories: string[];
   salesChannels: SalesChannelSummary[];
   fetchedAt: number;
 }

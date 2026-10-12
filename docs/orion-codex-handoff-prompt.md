@@ -1,5 +1,7 @@
 # Codex handoff prompt for the ORION repository
 
+> Historical implementation prompt. The ORION integration is live as of 2026-10-12. Its active pilot schedule is Monday, Wednesday, and Friday at 00:15 Europe/Amsterdam through 2026-11-09; operational details now live in ORION's `docs/ecommerce-discovery-schedule.md`.
+
 Copy the prompt below into a Codex session opened in the ORION repository on the Mac mini.
 
 ```text
@@ -53,7 +55,7 @@ Implement in ORION
 1. Add one ecommerce discovery task using ORION's existing task/scheduler abstraction.
 2. Run it from the ecommerce repository working directory without shell-built command interpolation. Pass the executable and arguments as structured subprocess arguments if ORION supports that.
 3. Use the IANA timezone Europe/Amsterdam so daylight-saving changes do not shift the intended local schedule.
-4. Pilot schedule: Monday, Wednesday, and Friday at 02:00 Europe/Amsterdam for four weeks.
+4. Pilot schedule: Monday, Wednesday, and Friday at 00:15 Europe/Amsterdam through 2026-11-09.
 5. Point each scheduled execution at a two-job product-discovery-plan.v1 file owned alongside the ecommerce configuration. ORION may select among explicitly configured plan files for rotation, but it must not invent supplier filters or scoring rules.
 6. Apply a 30-minute outer timeout to the two-job process. On timeout, terminate the full subprocess tree using ORION's existing safe process-control mechanism.
 7. If ORION has resource locks, use the existing Ollama/model resource lock so discovery does not compete with another local-model-heavy task. Do not add a second Ollama server.

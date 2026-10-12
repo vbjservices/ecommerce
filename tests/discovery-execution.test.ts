@@ -14,6 +14,7 @@ const profile: DiscoveryProfile = {
 
 test('discovery execution reuses a fresh persisted run without calling the supplier', async () => {
   let supplierCalls = 0;
+  let cachedCategory = '';
   const adapter: SupplierAdapter = {
     provider: 'fixture',
     providerName: 'Fixture supplier',
@@ -24,14 +25,18 @@ test('discovery execution reuses a fresh persisted run without calling the suppl
   };
   const cached = { runId: 'run-cached', candidateCount: 12, observationCount: 12 };
   const repository: DiscoveryRunRepository = {
-    findFresh: async () => cached,
+    findFresh: async (input) => {
+      cachedCategory = input.categoryKey;
+      return cached;
+    },
     save: async () => { throw new Error('cache should not be saved again'); },
   };
   const result = await executeDiscoveryRun({ adapter, repository }, {
-    query: '  Cat   Toy ', profile,
+    query: '  Cat   Toy ', profile, categoryKey: 'pet-enrichment',
   });
   assert.deepEqual(result, { source: 'cache', persisted: cached, run: null });
   assert.equal(supplierCalls, 0);
+  assert.equal(cachedCategory, 'pet-enrichment');
 });
 
 test('discovery execution searches and persists through one application boundary', async () => {
@@ -54,6 +59,7 @@ test('discovery execution searches and persists through one application boundary
     save: async (provider, run) => {
       savedProvider = provider;
       assert.equal(run.originalQuery, 'cat toy');
+      assert.equal(run.categoryKey, 'pets');
       return persisted;
     },
   };

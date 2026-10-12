@@ -3,9 +3,11 @@ import { readPublicConfig } from './config';
 import { createBrowserDatabase } from './supabase';
 import { checkAccess } from './auth';
 import {
+  readDiscoveryCandidatePage,
+  readDiscoveryCategories,
   readRecentCandidates,
-  readRecentDiscoveryCandidates,
   readSalesChannels,
+  type DiscoverySort,
 } from './workspace-repository';
 import { isWorkspaceSnapshotFresh, type WorkspaceSnapshot } from './workspace-cache';
 import {
@@ -73,6 +75,12 @@ async function start() {
   let snapshot: WorkspaceSnapshot | null = null;
   let refreshInFlight: Promise<void> | null = null;
   let activeView: 'discovery' | 'imported' = 'discovery';
+  let discoveryQuery: {
+    page: number;
+    category: string;
+    eligibility: string;
+    sort: DiscoverySort;
+  } = { page: 1, category: '', eligibility: '', sort: 'newest' };
   let tooltipSequence = 0;
 
   function action(label: string, handler: () => void) {
@@ -1021,7 +1029,10 @@ async function start() {
       title.textContent = candidate.title;
       const context = document.createElement('p');
       context.className = 'candidate-supplier';
-      context.textContent = `${candidate.suppliers.name} · “${candidate.discovery_runs.original_query}” · ${candidate.discovery_runs.profile_id}`;
+      const category = candidate.catalog?.category_keys.join(', ')
+        ?? candidate.catalog?.category_key
+        ?? candidate.discovery_runs.profile_id;
+      context.textContent = `${candidate.suppliers.name} · “${candidate.discovery_runs.original_query}” · ${category}`;
       identity.append(title, context);
       const eligibility = document.createElement('span');
       eligibility.className = `badge eligibility-${candidate.eligibility_status}`;
@@ -1038,6 +1049,8 @@ async function start() {
         metric('Coverage', `${Math.round(Number(candidate.coverage))}%`),
         metric('Relevance', candidate.relevance_level),
         metric('Strategies', String(strategyCount)),
+        metric('Seen in runs', String(candidate.catalog?.seen_count ?? 1),
+          'How many discovery runs found this supplier product. Repeated sightings add evidence but do not prove customer demand.'),
         metric('Supplier cost', discoveryCost(candidate)),
         metric('Reported stock', count(observation?.inventory)),
         metric('Verified stock', count(observation?.verified_inventory)),
@@ -1124,6 +1137,56 @@ async function start() {
       ul.append(li);
     }
     list.append(ul);
+    const totalPages = Math.max(1, Math.ceil(current.discoveryTotal / current.discoveryPageSize));
+    const pagination = document.createElement('nav');
+    pagination.className = 'discovery-pagination';
+    pagination.setAttribute('aria-label', 'Discovery pages');
+    const previous = document.createElement('button');
+    previous.type = 'button';
+    previous.className = 'secondary-button';
+    previous.textContent = 'Previous';
+    previous.disabled = current.discoveryPage <= 1;
+    const pageStatus = document.createElement('span');
+    pageStatus.textContent = `Page ${current.discoveryPage} of ${totalPages} · ${current.discoveryTotal} products`;
+    const next = document.createElement('button');
+    next.type = 'button';
+    next.className = 'secondary-button';
+    next.textContent = 'Next';
+    next.disabled = current.discoveryPage >= totalPages;
+    previous.addEventListener('click', () => {
+      discoveryQuery.page = Math.max(1, discoveryQuery.page - 1);
+      void refresh({ force: true, background: true });
+    });
+    next.addEventListener('click', () => {
+      discoveryQuery.page = Math.min(totalPages, discoveryQuery.page + 1);
+      void refresh({ force: true, background: true });
+    });
+    pagination.append(previous, pageStatus, next);
+    list.append(pagination);
+  }
+
+  function renderDiscoveryControls(current: WorkspaceSnapshot) {
+    const form = app.querySelector<HTMLFormElement>('.discovery-controls')!;
+    const category = form.elements.namedItem('category') as HTMLSelectElement;
+    for (const key of current.discoveryCategories) {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = key.replace(/-/g, ' ');
+      category.append(option);
+    }
+    category.value = discoveryQuery.category;
+    (form.elements.namedItem('eligibility') as HTMLSelectElement).value = discoveryQuery.eligibility;
+    (form.elements.namedItem('sort') as HTMLSelectElement).value = discoveryQuery.sort;
+    form.addEventListener('change', () => {
+      const data = new FormData(form);
+      discoveryQuery = {
+        page: 1,
+        category: String(data.get('category') ?? ''),
+        eligibility: String(data.get('eligibility') ?? ''),
+        sort: String(data.get('sort') ?? 'newest') as DiscoverySort,
+      };
+      void refresh({ force: true, background: true });
+    });
   }
 
   function renderWorkspace(current: WorkspaceSnapshot, status = `Updated ${cacheTime(current.fetchedAt)}`) {
@@ -1134,6 +1197,9 @@ async function start() {
       <button id="discovery-tab" type="button" role="tab" data-view="discovery">Discovery <span class="tab-count"></span></button>
       <button id="imported-tab" type="button" role="tab" data-view="imported">Imported products <span class="tab-count"></span></button></nav>
       <section class="panel discovery-panel" role="tabpanel" aria-labelledby="discovery-tab" data-panel="discovery"><div class="section-heading"><h2>Discovery shortlist</h2><span class="badge">Evidence ranked</span></div>
+      <form class="discovery-controls"><label>Category<select name="category"><option value="">All categories</option></select></label>
+      <label>Eligibility<select name="eligibility"><option value="">All statuses</option><option value="pass">Pass</option><option value="review">Review</option><option value="fail">Fail</option></select></label>
+      <label>Sort by<select name="sort"><option value="newest">Newest observation</option><option value="score">Highest score</option><option value="confidence">Highest confidence</option></select></label></form>
       <div class="discovery-candidates"></div></section>
       <section class="panel" role="tabpanel" aria-labelledby="imported-tab" data-panel="imported"><div class="section-heading"><h2>Imported products</h2><span class="badge">Supabase store</span></div>
       <div class="candidates"></div></section><p class="footnote refresh-status" role="status"></p>
@@ -1155,11 +1221,7 @@ async function start() {
       }
     };
     const tabs = app.querySelectorAll<HTMLButtonElement>('[role="tab"]');
-    const importedIds = new Set(candidates.map((candidate) => candidate.supplier_products.external_product_id));
-    const discoveryCount = current.discoveryCandidates.filter(
-      (candidate) => !importedIds.has(candidate.external_product_id),
-    ).length;
-    tabs[0]!.querySelector('.tab-count')!.textContent = String(discoveryCount);
+    tabs[0]!.querySelector('.tab-count')!.textContent = String(current.discoveryTotal);
     tabs[1]!.querySelector('.tab-count')!.textContent = String(candidates.length);
     for (const tab of tabs) {
       tab.addEventListener('click', () => selectView(tab.dataset.view as 'discovery' | 'imported'));
@@ -1172,6 +1234,7 @@ async function start() {
       });
     }
     selectView(activeView);
+    renderDiscoveryControls(current);
     renderDiscoveryCandidates(current);
     const list = app.querySelector('.candidates')!;
     if (!candidates.length) {
@@ -1372,13 +1435,43 @@ async function start() {
         action('Sign out', () => { void signOut(); });
         return;
       }
-      const [candidates, discoveryCandidates, salesChannels] = await Promise.all([
+      let [candidates, discoveryPage, discoveryCategories, salesChannels] = await Promise.all([
         readRecentCandidates(client),
-        readRecentDiscoveryCandidates(client),
+        readDiscoveryCandidatePage(client, {
+          page: discoveryQuery.page,
+          ...(discoveryQuery.category ? { category: discoveryQuery.category } : {}),
+          ...(discoveryQuery.eligibility
+            ? { eligibility: discoveryQuery.eligibility as 'pass' | 'review' | 'fail' }
+            : {}),
+          sort: discoveryQuery.sort,
+        }),
+        readDiscoveryCategories(client),
         readSalesChannels(client),
       ]);
+      const finalPage = Math.max(1, Math.ceil(discoveryPage.total / discoveryPage.pageSize));
+      if (discoveryQuery.page > finalPage) {
+        discoveryQuery.page = finalPage;
+        discoveryPage = await readDiscoveryCandidatePage(client, {
+          page: finalPage,
+          ...(discoveryQuery.category ? { category: discoveryQuery.category } : {}),
+          ...(discoveryQuery.eligibility
+            ? { eligibility: discoveryQuery.eligibility as 'pass' | 'review' | 'fail' }
+            : {}),
+          sort: discoveryQuery.sort,
+        });
+      }
       if (current !== revision) return;
-      snapshot = { access, candidates, discoveryCandidates, salesChannels, fetchedAt: Date.now() };
+      snapshot = {
+        access,
+        candidates,
+        discoveryCandidates: discoveryPage.items,
+        discoveryTotal: discoveryPage.total,
+        discoveryPage: discoveryPage.page,
+        discoveryPageSize: discoveryPage.pageSize,
+        discoveryCategories,
+        salesChannels,
+        fetchedAt: Date.now(),
+      };
       renderCurrentRoute(snapshot);
     } catch (error) {
       if (current !== revision) return;

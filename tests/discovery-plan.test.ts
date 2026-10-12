@@ -13,10 +13,12 @@ test('ORION discovery plans are bounded, strict, and preserve dynamic supplier f
     jobs: [{
       query: 'interactive cat toy',
       profileId: 'pets',
+      categoryKey: 'pets',
       filters: { categoryId: 'cat-toys', warehouseCountry: 'DE', minInventory: 250 },
     }],
   });
   assert.equal(parsed.jobs[0]!.filters?.warehouseCountry, 'DE');
+  assert.equal(parsed.jobs[0]!.categoryKey, 'pets');
   assert.throws(() => parseDiscoveryPlan({
     schema: discoveryPlanInputSchema,
     planId: 'too-many',
@@ -26,6 +28,21 @@ test('ORION discovery plans are bounded, strict, and preserve dynamic supplier f
     schema: discoveryPlanInputSchema,
     planId: 'unknown-field',
     jobs: [{ query: 'cat toy', unsafeBudget: 100_000 }],
+  }), /Invalid discovery plan/);
+});
+
+test('category labels are independent from scoring profiles', () => {
+  const parsed = parseDiscoveryPlan({
+    schema: discoveryPlanInputSchema,
+    planId: 'broader-categories',
+    jobs: [{ query: 'portable desk organizer', profileId: 'generic', categoryKey: 'office-productivity' }],
+  });
+  assert.equal(parsed.jobs[0]!.profileId, 'generic');
+  assert.equal(parsed.jobs[0]!.categoryKey, 'office-productivity');
+  assert.throws(() => parseDiscoveryPlan({
+    schema: discoveryPlanInputSchema,
+    planId: 'invalid-category',
+    jobs: [{ query: 'desk organizer', profileId: 'generic', categoryKey: 'Office & Productivity' }],
   }), /Invalid discovery plan/);
 });
 

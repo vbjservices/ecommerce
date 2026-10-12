@@ -76,6 +76,7 @@ try {
         const result = await runJob({
           query: job.query,
           profileId: job.profileId,
+          categoryKey: job.categoryKey ?? job.profileId,
           ...(job.refresh === undefined ? {} : { refresh: job.refresh }),
           ...(job.filters === undefined ? {} : { filters: definedFilters(job.filters) }),
         });

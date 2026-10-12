@@ -148,6 +148,7 @@ export interface DiscoveryRunWarning {
 
 export interface DiscoveryRunResult {
   profileId: string;
+  categoryKey: string;
   originalQuery: string;
   status: 'completed' | 'completed_with_warnings' | 'failed';
   configurationVersion: string;

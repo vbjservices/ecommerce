@@ -182,11 +182,72 @@ const discoveryCandidateBaseSummary = z.object({
       explanation: z.string(),
     })),
   }),
+  catalog: z.object({
+    category_key: z.string(),
+    category_keys: z.array(z.string()),
+    first_seen_at: z.string(),
+    last_seen_at: z.string(),
+    seen_count: z.number().int().positive(),
+  }).optional(),
 });
 const discoveryCandidateSummary = discoveryCandidateBaseSummary.extend({
   shipping_quotes: z.array(discoveryShippingQuoteSummary),
 });
 export type DiscoveryCandidateSummary = z.infer<typeof discoveryCandidateSummary>;
+
+export const discoveryPageSize = 20;
+export const discoverySortOptions = ['newest', 'score', 'confidence'] as const;
+export type DiscoverySort = typeof discoverySortOptions[number];
+export interface DiscoveryCandidateQuery {
+  page: number;
+  pageSize?: number;
+  category?: string;
+  eligibility?: 'pass' | 'review' | 'fail';
+  sort?: DiscoverySort;
+}
+export interface DiscoveryCandidatePage {
+  items: DiscoveryCandidateSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+const discoveryCatalogRow = z.object({
+  id: z.uuid(),
+  rank: z.number().int().positive(),
+  external_product_id: z.string(),
+  title: z.string(),
+  image_url: z.string().nullable(),
+  image_urls: z.array(z.string()),
+  source_url: z.string().nullable(),
+  eligibility_status: z.enum(['pass', 'review', 'fail']),
+  relevance_level: z.enum(['exact', 'strong', 'related', 'weak', 'irrelevant']),
+  score: z.union([z.number(), z.string()]),
+  confidence: z.union([z.number(), z.string()]),
+  coverage: z.union([z.number(), z.string()]),
+  assessment: discoveryCandidateBaseSummary.shape.assessment,
+  supplier_name: z.string(),
+  original_query: z.string(),
+  profile_id: z.string(),
+  category_key: z.string(),
+  category_keys: z.array(z.string()),
+  completed_at: z.string(),
+  first_seen_at: z.string(),
+  last_seen_at: z.string(),
+  seen_count: z.number().int().positive(),
+  strategies: z.array(z.string()),
+  supplier_cost_min: z.union([z.number().nonnegative(), z.string()]).nullable(),
+  supplier_cost_max: z.union([z.number().nonnegative(), z.string()]).nullable(),
+  currency: z.string().nullable(),
+  listing_count: z.number().int().nonnegative().nullable(),
+  inventory: z.number().int().nonnegative().nullable(),
+  verified_inventory: z.number().int().nonnegative().nullable(),
+  delivery_days_min: z.number().int().nonnegative().nullable(),
+  delivery_days_max: z.number().int().nonnegative().nullable(),
+});
+
+export type DiscoveryCatalogMetadata = Pick<z.infer<typeof discoveryCatalogRow>,
+  'category_key' | 'category_keys' | 'first_seen_at' | 'last_seen_at' | 'seen_count'>;
 
 /** A narrow, RLS-protected read model; no raw payloads or browser workflow writes. */
 export async function readRecentCandidates(client: SupabaseClient): Promise<CandidateSummary[]> {
@@ -400,4 +461,118 @@ export async function readRecentDiscoveryCandidates(
     ...candidate,
     shipping_quotes: byCandidate.get(candidate.id) ?? [],
   })));
+}
+
+/** Paginated catalog for unattended discovery runs. The SQL view deduplicates across runs and hides imports. */
+export async function readDiscoveryCandidatePage(
+  client: SupabaseClient,
+  input: DiscoveryCandidateQuery,
+): Promise<DiscoveryCandidatePage> {
+  const page = Number.isSafeInteger(input.page) && input.page > 0 ? input.page : 1;
+  const pageSize = Number.isSafeInteger(input.pageSize) && input.pageSize! > 0
+    ? Math.min(input.pageSize!, 50)
+    : discoveryPageSize;
+  const start = (page - 1) * pageSize;
+  const columns = `id,rank,external_product_id,title,image_url,image_urls,source_url,
+    eligibility_status,relevance_level,score,confidence,coverage,assessment,supplier_name,
+    original_query,profile_id,category_key,category_keys,completed_at,first_seen_at,last_seen_at,seen_count,
+    strategies,supplier_cost_min,supplier_cost_max,currency,listing_count,inventory,
+    verified_inventory,delivery_days_min,delivery_days_max`;
+  let request = client.from('discovery_catalog').select(columns, { count: 'exact' });
+  if (input.category) request = request.contains('category_keys', [input.category]);
+  if (input.eligibility) request = request.eq('eligibility_status', input.eligibility);
+  const sort = input.sort ?? 'newest';
+  if (sort === 'score') request = request.order('score', { ascending: false });
+  else if (sort === 'confidence') request = request.order('confidence', { ascending: false });
+  else request = request.order('created_at', { ascending: false });
+  const result = await request
+    .order('external_product_id', { ascending: true })
+    .range(start, start + pageSize - 1);
+  if (result.error && ['42P01', 'PGRST205'].includes(result.error.code)) {
+    const legacy = await readRecentDiscoveryCandidates(client);
+    return { items: legacy, total: legacy.length, page: 1, pageSize };
+  }
+  if (result.error) {
+    throw workspaceReadError(result, 'Discovery results could not be loaded. Please try again.');
+  }
+  const parsed = z.array(discoveryCatalogRow).safeParse(result.data);
+  if (!parsed.success) throw new Error('The discovery catalog is not in the expected format. Contact an administrator.');
+  const candidateIds = parsed.data.map((candidate) => candidate.id);
+  let quotes: z.infer<typeof discoveryShippingQuoteSummary>[] = [];
+  if (candidateIds.length) {
+    const quoteResult = await client.from('discovery_shipping_quotes')
+      .select(`discovery_candidate_id,external_variant_id,destination_country_code,origin_country_code,
+        quantity,available,shipping_method,cost,currency,delivery_days_min,delivery_days_max,quoted_at`)
+      .in('discovery_candidate_id', candidateIds);
+    if (quoteResult.error && !['42P01', 'PGRST205'].includes(quoteResult.error.code)) {
+      throw workspaceReadError(quoteResult, 'Discovery shipping quotes could not be loaded. Please try again.');
+    }
+    if (!quoteResult.error) {
+      const parsedQuotes = z.array(discoveryShippingQuoteSummary).safeParse(quoteResult.data);
+      if (!parsedQuotes.success) throw new Error('Discovery shipping quote data is not in the expected format.');
+      quotes = parsedQuotes.data;
+    }
+  }
+  const byCandidate = new Map<string, z.infer<typeof discoveryShippingQuoteSummary>[]>();
+  for (const quote of quotes) {
+    const current = byCandidate.get(quote.discovery_candidate_id) ?? [];
+    current.push(quote);
+    byCandidate.set(quote.discovery_candidate_id, current);
+  }
+  const items = parsed.data.map((candidate) => ({
+    id: candidate.id,
+    rank: candidate.rank,
+    external_product_id: candidate.external_product_id,
+    title: candidate.title,
+    image_url: candidate.image_url,
+    image_urls: candidate.image_urls,
+    source_url: candidate.source_url,
+    eligibility_status: candidate.eligibility_status,
+    relevance_level: candidate.relevance_level,
+    score: candidate.score,
+    confidence: candidate.confidence,
+    coverage: candidate.coverage,
+    assessment: candidate.assessment,
+    suppliers: { name: candidate.supplier_name },
+    discovery_runs: {
+      original_query: candidate.original_query,
+      profile_id: candidate.profile_id,
+      completed_at: candidate.completed_at,
+    },
+    discovery_occurrences: candidate.strategies.map((strategy) => ({ strategy })),
+    supplier_product_observations: [{
+      supplier_cost_min: candidate.supplier_cost_min,
+      supplier_cost_max: candidate.supplier_cost_max,
+      currency: candidate.currency,
+      listing_count: candidate.listing_count,
+      inventory: candidate.inventory,
+      verified_inventory: candidate.verified_inventory,
+      delivery_days_min: candidate.delivery_days_min,
+      delivery_days_max: candidate.delivery_days_max,
+    }],
+    shipping_quotes: byCandidate.get(candidate.id) ?? [],
+    catalog: {
+      category_key: candidate.category_key,
+      category_keys: candidate.category_keys,
+      first_seen_at: candidate.first_seen_at,
+      last_seen_at: candidate.last_seen_at,
+      seen_count: candidate.seen_count,
+    },
+  }));
+  return {
+    items: z.array(discoveryCandidateSummary).parse(items),
+    total: result.count ?? parsed.data.length,
+    page,
+    pageSize,
+  };
+}
+
+/** Business category labels are recorded by plans independently from scoring profiles. */
+export async function readDiscoveryCategories(client: SupabaseClient): Promise<string[]> {
+  const result = await client.from('discovery_catalog').select('category_keys').limit(1_000);
+  if (result.error && ['42P01', 'PGRST205'].includes(result.error.code)) return [];
+  if (result.error) throw workspaceReadError(result, 'Discovery categories could not be loaded. Please try again.');
+  const parsed = z.array(z.object({ category_keys: z.array(z.string()) })).safeParse(result.data);
+  if (!parsed.success) throw new Error('Discovery categories are not in the expected format.');
+  return [...new Set(parsed.data.flatMap((item) => item.category_keys))].sort();
 }

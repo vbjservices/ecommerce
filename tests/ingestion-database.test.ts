@@ -39,6 +39,10 @@ async function migrate(db: PGlite) {
     'supabase/migrations/20261001000300_shopify_draft_listings.sql',
     'utf8',
   ));
+  await db.exec(await readFile(
+    'supabase/migrations/20261012000100_discovery_catalog.sql',
+    'utf8',
+  ));
 }
 
 async function ingest(

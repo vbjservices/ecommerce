@@ -17,6 +17,7 @@ export interface ExecuteDiscoveryRunDependencies {
 export interface ExecuteDiscoveryRunRequest {
   query: string;
   profile: DiscoveryProfile;
+  categoryKey?: string;
   refresh?: boolean;
   budget?: DiscoveryBudget;
   filters?: SupplierDiscoveryInput['filters'];
@@ -41,6 +42,7 @@ export async function executeDiscoveryRun(
     const cached = await dependencies.repository.findFresh({
       providerCode: dependencies.adapter.provider,
       profileId: request.profile.id,
+      categoryKey: request.categoryKey ?? request.profile.id,
       originalQuery: normalizedQuery,
       configurationVersion: DISCOVERY_CONFIGURATION_VERSION,
       scoringVersion: DISCOVERY_SCORING_VERSION,
@@ -54,6 +56,7 @@ export async function executeDiscoveryRun(
     {
       query: normalizedQuery,
       profile: request.profile,
+      categoryKey: request.categoryKey ?? request.profile.id,
       ...(request.budget ? { budget: request.budget } : {}),
       ...(request.filters ? { filters: request.filters } : {}),
     },
