@@ -95,7 +95,7 @@ npm run cj:import -- 1561984433618694144
 npm run cj:discover -- "cat toy" --profile=pets
 ```
 
-`cj:search` is the legacy read-only preview and does not persist results. `cj:discover` executes the budgeted V2 pipeline and atomically persists its run, query plan, ranked candidates, occurrences, normalized observations, shortlist image galleries, and private raw pages. Apply `20260930000200_discovery_runs.sql`, `20260930000300_product_image_galleries.sql`, `20261001000100_supplier_shipping_quotes.sql`, `20261001000200_product_reviews.sql`, `20261001000300_shopify_draft_listings.sql`, and `20261012000100_discovery_catalog.sql` before using every dashboard feature. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product, image gallery, and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
+`cj:search` is the legacy read-only preview and does not persist results. `cj:discover` executes the budgeted V2 pipeline and atomically persists its run, query plan, ranked candidates, occurrences, normalized observations, shortlist image galleries, and private raw pages. Apply `20260930000200_discovery_runs.sql`, `20260930000300_product_image_galleries.sql`, `20261001000100_supplier_shipping_quotes.sql`, `20261001000200_product_reviews.sql`, `20261001000300_shopify_draft_listings.sql`, `20261012000100_discovery_catalog.sql`, and `20261013000100_discovery_search_and_inventory.sql` before using every dashboard feature. A CJ product URL is also accepted by the import command. Repeating an import updates the same mapped product, image gallery, and variants, creates another private historical snapshot, and does not duplicate the candidate. The commands never print credentials, access tokens, or raw provider responses.
 
 The image-gallery, shipping-quote, and product-review migrations are safe to retry in the SQL Editor. This matters when an earlier attempt created a helper function or table and then stopped: use the current complete file and run it again rather than deleting existing objects.
 
@@ -108,6 +108,7 @@ Deploy the committed function from the linked project:
 ```sh
 npx --yes supabase@2.117.0 functions deploy import-cj-product --use-api
 npx --yes supabase@2.117.0 functions deploy quote-cj-shipping --use-api
+npx --yes supabase@2.117.0 functions deploy refresh-cj-stock --use-api
 npx --yes supabase@2.117.0 functions deploy review-product --use-api
 npx --yes supabase@2.117.0 functions deploy start-shopify-connection --use-api
 npx --yes supabase@2.117.0 functions deploy shopify-oauth-callback --no-verify-jwt --use-api
