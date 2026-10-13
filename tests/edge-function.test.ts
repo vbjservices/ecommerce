@@ -55,6 +55,29 @@ test('worldwide shipping edge function checks the supplier catalog in bounded ca
   assert.match(config, /\[functions\.quote-cj-shipping\][\s\S]*verify_jwt = true/);
 });
 
+test('live stock edge function keeps CJ credentials server-side and stores normalized checks', async () => {
+  const source = await readFile('supabase/functions/refresh-cj-stock/index.ts', 'utf8');
+  await transform(source, {
+    loader: 'ts', format: 'esm', target: 'es2022',
+    sourcefile: 'supabase/functions/refresh-cj-stock/index.ts',
+  });
+  assert.match(source, /withSupabase\(\{ auth: 'user' \}/);
+  const membership = source.indexOf("rpc('is_internal_user')");
+  const provider = source.indexOf('/product/stock/getInventoryByPid');
+  const persistence = source.indexOf("from('discovery_inventory_checks').insert");
+  assert.ok(membership > 0);
+  assert.ok(provider > membership);
+  assert.ok(persistence > provider);
+  assert.match(source, /Deno\.env\.get\('CJ_API_KEY'\)/);
+
+  const browser = await readFile('src/browser/main.ts', 'utf8');
+  assert.match(browser, /functions\.invoke\('refresh-cj-stock'/);
+  assert.doesNotMatch(browser, /CJ_API_KEY|SUPABASE_SERVICE_ROLE_KEY/);
+
+  const config = await readFile('supabase/config.toml', 'utf8');
+  assert.match(config, /\[functions\.refresh-cj-stock\][\s\S]*verify_jwt = true/);
+});
+
 test('product review edge function keeps approval behind verified identity and membership', async () => {
   const source = await readFile('supabase/functions/review-product/index.ts', 'utf8');
   await transform(source, {

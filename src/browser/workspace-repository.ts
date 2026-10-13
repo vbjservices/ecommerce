@@ -60,6 +60,19 @@ const discoveryShippingQuoteSummary = shippingQuoteSummary.omit({ supplier_varia
   external_variant_id: z.string(),
 });
 
+const discoveryInventoryCheckSummary = z.object({
+  batch_id: z.uuid(),
+  candidate_id: z.uuid(),
+  external_variant_id: z.string(),
+  variant_name: z.string().nullable(),
+  total_inventory: z.number().int().nonnegative().nullable(),
+  warehouses: z.array(z.object({
+    country_code: z.string().nullable(),
+    inventory: z.number().int().nonnegative(),
+  })),
+  checked_at: z.string(),
+});
+
 const candidateBaseSummary = z.object({
   id: z.uuid(), status: z.enum(candidateStatuses), created_at: z.string(),
   products: z.object({
@@ -192,6 +205,7 @@ const discoveryCandidateBaseSummary = z.object({
 });
 const discoveryCandidateSummary = discoveryCandidateBaseSummary.extend({
   shipping_quotes: z.array(discoveryShippingQuoteSummary),
+  inventory_checks: z.array(discoveryInventoryCheckSummary),
 });
 export type DiscoveryCandidateSummary = z.infer<typeof discoveryCandidateSummary>;
 
@@ -201,7 +215,9 @@ export type DiscoverySort = typeof discoverySortOptions[number];
 export interface DiscoveryCandidateQuery {
   page: number;
   pageSize?: number;
-  category?: string;
+  search?: string;
+  niche?: string;
+  useCase?: string;
   eligibility?: 'pass' | 'review' | 'fail';
   sort?: DiscoverySort;
 }
@@ -244,7 +260,14 @@ const discoveryCatalogRow = z.object({
   verified_inventory: z.number().int().nonnegative().nullable(),
   delivery_days_min: z.number().int().nonnegative().nullable(),
   delivery_days_max: z.number().int().nonnegative().nullable(),
+  niche_key: z.string(),
+  use_case_keys: z.array(z.string()),
 });
+
+export interface DiscoveryFacets {
+  niches: string[];
+  useCases: string[];
+}
 
 export type DiscoveryCatalogMetadata = Pick<z.infer<typeof discoveryCatalogRow>,
   'category_key' | 'category_keys' | 'first_seen_at' | 'last_seen_at' | 'seen_count'>;
@@ -460,6 +483,7 @@ export async function readRecentDiscoveryCandidates(
   return z.array(discoveryCandidateSummary).parse(parsed.data.map((candidate) => ({
     ...candidate,
     shipping_quotes: byCandidate.get(candidate.id) ?? [],
+    inventory_checks: [],
   })));
 }
 
@@ -477,9 +501,14 @@ export async function readDiscoveryCandidatePage(
     eligibility_status,relevance_level,score,confidence,coverage,assessment,supplier_name,
     original_query,profile_id,category_key,category_keys,completed_at,first_seen_at,last_seen_at,seen_count,
     strategies,supplier_cost_min,supplier_cost_max,currency,listing_count,inventory,
-    verified_inventory,delivery_days_min,delivery_days_max`;
+    verified_inventory,delivery_days_min,delivery_days_max,niche_key,use_case_keys`;
   let request = client.from('discovery_catalog').select(columns, { count: 'exact' });
-  if (input.category) request = request.contains('category_keys', [input.category]);
+  if (input.search?.trim()) {
+    const safeSearch = input.search.trim().slice(0, 100).replace(/[%_]/g, '\\$&');
+    request = request.ilike('title', `%${safeSearch}%`);
+  }
+  if (input.niche) request = request.eq('niche_key', input.niche);
+  if (input.useCase) request = request.contains('use_case_keys', [input.useCase]);
   if (input.eligibility) request = request.eq('eligibility_status', input.eligibility);
   const sort = input.sort ?? 'newest';
   if (sort === 'score') request = request.order('score', { ascending: false });
@@ -488,7 +517,7 @@ export async function readDiscoveryCandidatePage(
   const result = await request
     .order('external_product_id', { ascending: true })
     .range(start, start + pageSize - 1);
-  if (result.error && ['42P01', 'PGRST205'].includes(result.error.code)) {
+  if (result.error && ['42P01', '42703', 'PGRST204', 'PGRST205'].includes(result.error.code)) {
     const legacy = await readRecentDiscoveryCandidates(client);
     return { items: legacy, total: legacy.length, page: 1, pageSize };
   }
@@ -518,6 +547,29 @@ export async function readDiscoveryCandidatePage(
     const current = byCandidate.get(quote.discovery_candidate_id) ?? [];
     current.push(quote);
     byCandidate.set(quote.discovery_candidate_id, current);
+  }
+  let inventoryChecks: z.infer<typeof discoveryInventoryCheckSummary>[] = [];
+  if (candidateIds.length) {
+    const stockResult = await client.from('discovery_inventory_checks')
+      .select('batch_id,candidate_id,external_variant_id,variant_name,total_inventory,warehouses,checked_at')
+      .in('candidate_id', candidateIds)
+      .order('checked_at', { ascending: false });
+    if (stockResult.error && !['42P01', 'PGRST205'].includes(stockResult.error.code)) {
+      throw workspaceReadError(stockResult, 'Live inventory checks could not be loaded. Please try again.');
+    }
+    if (!stockResult.error) {
+      const parsedStock = z.array(discoveryInventoryCheckSummary).safeParse(stockResult.data);
+      if (!parsedStock.success) throw new Error('Inventory check data is not in the expected format.');
+      inventoryChecks = parsedStock.data;
+    }
+  }
+  const stockByCandidate = new Map<string, z.infer<typeof discoveryInventoryCheckSummary>[]>();
+  for (const candidateId of candidateIds) {
+    const checks = inventoryChecks.filter((item) => item.candidate_id === candidateId);
+    const latestBatch = checks[0]?.batch_id;
+    stockByCandidate.set(candidateId, latestBatch
+      ? checks.filter((item) => item.batch_id === latestBatch)
+      : []);
   }
   const items = parsed.data.map((candidate) => ({
     id: candidate.id,
@@ -551,6 +603,7 @@ export async function readDiscoveryCandidatePage(
       delivery_days_max: candidate.delivery_days_max,
     }],
     shipping_quotes: byCandidate.get(candidate.id) ?? [],
+    inventory_checks: stockByCandidate.get(candidate.id) ?? [],
     catalog: {
       category_key: candidate.category_key,
       category_keys: candidate.category_keys,
@@ -567,12 +620,19 @@ export async function readDiscoveryCandidatePage(
   };
 }
 
-/** Business category labels are recorded by plans independently from scoring profiles. */
-export async function readDiscoveryCategories(client: SupabaseClient): Promise<string[]> {
-  const result = await client.from('discovery_catalog').select('category_keys').limit(1_000);
-  if (result.error && ['42P01', 'PGRST205'].includes(result.error.code)) return [];
-  if (result.error) throw workspaceReadError(result, 'Discovery categories could not be loaded. Please try again.');
-  const parsed = z.array(z.object({ category_keys: z.array(z.string()) })).safeParse(result.data);
-  if (!parsed.success) throw new Error('Discovery categories are not in the expected format.');
-  return [...new Set(parsed.data.flatMap((item) => item.category_keys))].sort();
+/** Browser-safe facets are derived from normalized discovery titles, profiles, and business labels. */
+export async function readDiscoveryFacets(client: SupabaseClient): Promise<DiscoveryFacets> {
+  const result = await client.from('discovery_catalog').select('niche_key,use_case_keys').limit(1_000);
+  if (result.error && ['42P01', '42703', 'PGRST204', 'PGRST205'].includes(result.error.code)) {
+    return { niches: [], useCases: [] };
+  }
+  if (result.error) throw workspaceReadError(result, 'Discovery filters could not be loaded. Please try again.');
+  const parsed = z.array(z.object({
+    niche_key: z.string(), use_case_keys: z.array(z.string()),
+  })).safeParse(result.data);
+  if (!parsed.success) throw new Error('Discovery filters are not in the expected format.');
+  return {
+    niches: [...new Set(parsed.data.map((item) => item.niche_key))].sort(),
+    useCases: [...new Set(parsed.data.flatMap((item) => item.use_case_keys))].sort(),
+  };
 }

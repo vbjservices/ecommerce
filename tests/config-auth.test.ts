@@ -218,7 +218,7 @@ test('discovery read model tolerates an undeployed migration and validates deplo
     delivery_days_min: 5, delivery_days_max: 9, quoted_at: '2026-10-01T10:00:00Z',
   };
   assert.deepEqual(await readRecentDiscoveryCandidates(client([row], null, [quote])), [{
-    ...row, shipping_quotes: [quote],
+    ...row, shipping_quotes: [quote], inventory_checks: [],
   }]);
 });
 
@@ -255,7 +255,7 @@ test('discovery read model falls back to the primary image until galleries are m
       : { select: () => ({ in: async () => ({ data: [], error: null }) }) },
   } as unknown as SupabaseClient;
   assert.deepEqual(await readRecentDiscoveryCandidates(client), [{
-    ...row, image_urls: ['https://example.com/cat.jpg'], shipping_quotes: [],
+    ...row, image_urls: ['https://example.com/cat.jpg'], shipping_quotes: [], inventory_checks: [],
   }]);
   assert.equal(calls, 2);
 });
@@ -269,7 +269,7 @@ test('workspace cache is page-memory only and expires after five minutes', () =>
     discoveryTotal: 0,
     discoveryPage: 1,
     discoveryPageSize: 20,
-    discoveryCategories: [],
+    discoveryFacets: { niches: [], useCases: [] },
     salesChannels: [],
     fetchedAt,
   };

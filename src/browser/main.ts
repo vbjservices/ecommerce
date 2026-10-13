@@ -4,7 +4,7 @@ import { createBrowserDatabase } from './supabase';
 import { checkAccess } from './auth';
 import {
   readDiscoveryCandidatePage,
-  readDiscoveryCategories,
+  readDiscoveryFacets,
   readRecentCandidates,
   readSalesChannels,
   type DiscoverySort,
@@ -77,10 +77,12 @@ async function start() {
   let activeView: 'discovery' | 'imported' = 'discovery';
   let discoveryQuery: {
     page: number;
-    category: string;
+    search: string;
+    niche: string;
+    useCase: string;
     eligibility: string;
     sort: DiscoverySort;
-  } = { page: 1, category: '', eligibility: '', sort: 'newest' };
+  } = { page: 1, search: '', niche: '', useCase: '', eligibility: '', sort: 'newest' };
   let tooltipSequence = 0;
 
   function action(label: string, handler: () => void) {
@@ -249,6 +251,7 @@ async function start() {
       provider_authentication: 'CJ rejected the configured API key.',
       provider_rate_limited: 'CJ\'s API point limit is temporarily exhausted. Try again after it replenishes.',
       provider_unavailable: 'CJ is temporarily unavailable. Try again shortly.',
+      stock_check_failed: 'CJ stock could not be refreshed. Try again shortly.',
       candidate_not_found: 'This product is no longer available to this workspace.',
       invalid_provider_payload: 'CJ returned product data that could not be safely imported.',
       persistence_failed: 'Supabase could not save the result. Check that all migrations ran.',
@@ -325,6 +328,65 @@ async function start() {
       style: 'currency', currency: observation.currency,
     });
     return min === max ? formatter.format(min) : `${formatter.format(min)} – ${formatter.format(max)}`;
+  }
+
+  function liveInventoryTotal(candidate: WorkspaceSnapshot['discoveryCandidates'][number]) {
+    if (!candidate.inventory_checks.length) return null;
+    const known = candidate.inventory_checks
+      .map((item) => item.total_inventory)
+      .filter((value): value is number => value !== null);
+    return known.length ? known.reduce((total, value) => total + value, 0) : null;
+  }
+
+  function inventoryCheckDetails(candidate: WorkspaceSnapshot['discoveryCandidates'][number]) {
+    if (!candidate.inventory_checks.length) return null;
+    const details = document.createElement('details');
+    details.className = 'inventory-details';
+    const summary = document.createElement('summary');
+    const checkedAt = new Date(candidate.inventory_checks[0]!.checked_at);
+    summary.textContent = `Live stock by variant · checked ${new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium', timeStyle: 'short',
+    }).format(checkedAt)}`;
+    const list = document.createElement('ul');
+    for (const item of candidate.inventory_checks) {
+      const row = document.createElement('li');
+      const warehouses = item.warehouses.map((warehouse) =>
+        `${warehouse.country_code ?? 'Unknown warehouse'}: ${count(warehouse.inventory)}`).join(' · ');
+      row.textContent = `${item.variant_name ?? item.external_variant_id}: ${count(item.total_inventory)}${warehouses ? ` (${warehouses})` : ''}`;
+      list.append(row);
+    }
+    details.append(summary, list);
+    return details;
+  }
+
+  function stockCheckControls(candidate: WorkspaceSnapshot['discoveryCandidates'][number]) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'secondary-button';
+    button.textContent = candidate.inventory_checks.length ? 'Refresh live stock' : 'Check live stock';
+    const status = document.createElement('span');
+    status.className = 'import-status';
+    status.setAttribute('role', 'status');
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      button.textContent = 'Checking CJ stock…';
+      status.textContent = 'Loading current variant and warehouse inventory.';
+      const result = await client.functions.invoke('refresh-cj-stock', {
+        body: { discoveryCandidateId: candidate.id },
+      });
+      if (result.error) {
+        button.disabled = false;
+        button.textContent = 'Try stock check again';
+        status.textContent = await functionErrorMessage(
+          result.error, 'Stock check failed. Confirm the migration and function deployment.',
+        );
+        return;
+      }
+      button.textContent = 'Stock updated';
+      status.textContent = 'Current CJ inventory saved.';
+      await refresh({ force: true, background: true });
+    });
+    return { button, status };
   }
 
   function count(value: number | null | undefined) {
@@ -1042,6 +1104,7 @@ async function start() {
       facts.className = 'candidate-facts discovery-facts';
       const strategyCount = new Set(candidate.discovery_occurrences.map((item) => item.strategy)).size;
       const observation = candidate.supplier_product_observations[0];
+      const liveStock = liveInventoryTotal(candidate);
       const shipping = shippingOverview(candidate.shipping_quotes);
       facts.append(
         metric('Score', String(Math.round(Number(candidate.score)))),
@@ -1052,7 +1115,10 @@ async function start() {
         metric('Seen in runs', String(candidate.catalog?.seen_count ?? 1),
           'How many discovery runs found this supplier product. Repeated sightings add evidence but do not prove customer demand.'),
         metric('Supplier cost', discoveryCost(candidate)),
-        metric('Reported stock', count(observation?.inventory)),
+        metric('Live stock', count(liveStock ?? observation?.inventory),
+          liveStock === null
+            ? 'This is CJ\'s catalog stock estimate. Use Check live stock for current variant and warehouse inventory.'
+            : 'Current CJ inventory summed across the checked variants and warehouses.'),
         metric('Verified stock', count(observation?.verified_inventory)),
         metric('CJ listings', count(observation?.listing_count)),
         metric('Delivery estimate', deliveryWindow(candidate)),
@@ -1087,10 +1153,14 @@ async function start() {
         details.append(group);
       }
       body.append(heading, facts, details);
+      const inventoryDetails = inventoryCheckDetails(candidate);
+      if (inventoryDetails) body.append(inventoryDetails);
       const quoteDetails = shippingQuoteDetails(candidate.shipping_quotes);
       if (quoteDetails) body.append(quoteDetails);
       const cardActions = document.createElement('div');
       cardActions.className = 'card-actions';
+      const stockControls = stockCheckControls(candidate);
+      cardActions.append(stockControls.button, stockControls.status);
       const shippingControls = shippingScanControls(
         { discoveryCandidateId: candidate.id }, candidate.shipping_quotes.length,
       );
@@ -1167,25 +1237,50 @@ async function start() {
 
   function renderDiscoveryControls(current: WorkspaceSnapshot) {
     const form = app.querySelector<HTMLFormElement>('.discovery-controls')!;
-    const category = form.elements.namedItem('category') as HTMLSelectElement;
-    for (const key of current.discoveryCategories) {
+    const labels: Record<string, string> = {
+      pets: 'Pets', 'home-kitchen': 'Home & kitchen', beauty: 'Beauty',
+      'baby-kids': 'Baby & kids', 'fitness-sports': 'Fitness & sports',
+      electronics: 'Electronics', fashion: 'Fashion', garden: 'Garden',
+      automotive: 'Automotive', office: 'Office', other: 'Other',
+      indoor: 'Indoor', outdoor: 'Outdoor',
+    };
+    const niche = form.elements.namedItem('niche') as HTMLSelectElement;
+    for (const key of current.discoveryFacets.niches) {
       const option = document.createElement('option');
       option.value = key;
-      option.textContent = key.replace(/-/g, ' ');
-      category.append(option);
+      option.textContent = labels[key] ?? key.replace(/-/g, ' ');
+      niche.append(option);
     }
-    category.value = discoveryQuery.category;
+    const useCase = form.elements.namedItem('useCase') as HTMLSelectElement;
+    for (const key of current.discoveryFacets.useCases) {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = labels[key] ?? key.replace(/-/g, ' ');
+      useCase.append(option);
+    }
+    (form.elements.namedItem('search') as HTMLInputElement).value = discoveryQuery.search;
+    niche.value = discoveryQuery.niche;
+    useCase.value = discoveryQuery.useCase;
     (form.elements.namedItem('eligibility') as HTMLSelectElement).value = discoveryQuery.eligibility;
     (form.elements.namedItem('sort') as HTMLSelectElement).value = discoveryQuery.sort;
-    form.addEventListener('change', () => {
+    const applyFilters = () => {
       const data = new FormData(form);
       discoveryQuery = {
         page: 1,
-        category: String(data.get('category') ?? ''),
+        search: String(data.get('search') ?? '').trim(),
+        niche: String(data.get('niche') ?? ''),
+        useCase: String(data.get('useCase') ?? ''),
         eligibility: String(data.get('eligibility') ?? ''),
         sort: String(data.get('sort') ?? 'newest') as DiscoverySort,
       };
       void refresh({ force: true, background: true });
+    };
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      applyFilters();
+    });
+    form.addEventListener('change', (event) => {
+      if ((event.target as HTMLElement).matches('select')) applyFilters();
     });
   }
 
@@ -1197,7 +1292,9 @@ async function start() {
       <button id="discovery-tab" type="button" role="tab" data-view="discovery">Discovery <span class="tab-count"></span></button>
       <button id="imported-tab" type="button" role="tab" data-view="imported">Imported products <span class="tab-count"></span></button></nav>
       <section class="panel discovery-panel" role="tabpanel" aria-labelledby="discovery-tab" data-panel="discovery"><div class="section-heading"><h2>Discovery shortlist</h2><span class="badge">Evidence ranked</span></div>
-      <form class="discovery-controls"><label>Category<select name="category"><option value="">All categories</option></select></label>
+      <form class="discovery-controls"><label class="discovery-search">Search products<span class="search-field"><input name="search" type="search" placeholder="e.g. slow feeder or dog bowl" maxlength="100" /><button type="submit">Search</button></span></label>
+      <label>Niche<select name="niche"><option value="">All niches</option></select></label>
+      <label>Use<select name="useCase"><option value="">Indoor & outdoor</option></select></label>
       <label>Eligibility<select name="eligibility"><option value="">All statuses</option><option value="pass">Pass</option><option value="review">Review</option><option value="fail">Fail</option></select></label>
       <label>Sort by<select name="sort"><option value="newest">Newest observation</option><option value="score">Highest score</option><option value="confidence">Highest confidence</option></select></label></form>
       <div class="discovery-candidates"></div></section>
@@ -1435,17 +1532,19 @@ async function start() {
         action('Sign out', () => { void signOut(); });
         return;
       }
-      let [candidates, discoveryPage, discoveryCategories, salesChannels] = await Promise.all([
+      let [candidates, discoveryPage, discoveryFacets, salesChannels] = await Promise.all([
         readRecentCandidates(client),
         readDiscoveryCandidatePage(client, {
           page: discoveryQuery.page,
-          ...(discoveryQuery.category ? { category: discoveryQuery.category } : {}),
+          ...(discoveryQuery.search ? { search: discoveryQuery.search } : {}),
+          ...(discoveryQuery.niche ? { niche: discoveryQuery.niche } : {}),
+          ...(discoveryQuery.useCase ? { useCase: discoveryQuery.useCase } : {}),
           ...(discoveryQuery.eligibility
             ? { eligibility: discoveryQuery.eligibility as 'pass' | 'review' | 'fail' }
             : {}),
           sort: discoveryQuery.sort,
         }),
-        readDiscoveryCategories(client),
+        readDiscoveryFacets(client),
         readSalesChannels(client),
       ]);
       const finalPage = Math.max(1, Math.ceil(discoveryPage.total / discoveryPage.pageSize));
@@ -1453,7 +1552,9 @@ async function start() {
         discoveryQuery.page = finalPage;
         discoveryPage = await readDiscoveryCandidatePage(client, {
           page: finalPage,
-          ...(discoveryQuery.category ? { category: discoveryQuery.category } : {}),
+          ...(discoveryQuery.search ? { search: discoveryQuery.search } : {}),
+          ...(discoveryQuery.niche ? { niche: discoveryQuery.niche } : {}),
+          ...(discoveryQuery.useCase ? { useCase: discoveryQuery.useCase } : {}),
           ...(discoveryQuery.eligibility
             ? { eligibility: discoveryQuery.eligibility as 'pass' | 'review' | 'fail' }
             : {}),
@@ -1468,7 +1569,7 @@ async function start() {
         discoveryTotal: discoveryPage.total,
         discoveryPage: discoveryPage.page,
         discoveryPageSize: discoveryPage.pageSize,
-        discoveryCategories,
+        discoveryFacets,
         salesChannels,
         fetchedAt: Date.now(),
       };

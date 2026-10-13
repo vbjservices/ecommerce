@@ -1,6 +1,7 @@
 import type { Access } from './auth';
 import type {
   CandidateSummary,
+  DiscoveryFacets,
   DiscoveryCandidateSummary,
   SalesChannelSummary,
 } from './workspace-repository';
@@ -14,7 +15,7 @@ export interface WorkspaceSnapshot {
   discoveryTotal: number;
   discoveryPage: number;
   discoveryPageSize: number;
-  discoveryCategories: string[];
+  discoveryFacets: DiscoveryFacets;
   salesChannels: SalesChannelSummary[];
   fetchedAt: number;
 }
