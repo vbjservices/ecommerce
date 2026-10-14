@@ -517,14 +517,45 @@ export async function readDiscoveryCandidatePage(
   const result = await request
     .order('external_product_id', { ascending: true })
     .range(start, start + pageSize - 1);
-  if (result.error && ['42P01', '42703', 'PGRST204', 'PGRST205'].includes(result.error.code)) {
+  let resultData: unknown = result.data;
+  let resultError = result.error;
+  let resultStatus = result.status;
+  let resultCount = result.count;
+  if (resultError && ['42703', 'PGRST204'].includes(resultError.code)) {
+    const legacyColumns = `id,rank,external_product_id,title,image_url,image_urls,source_url,
+      eligibility_status,relevance_level,score,confidence,coverage,assessment,supplier_name,
+      original_query,profile_id,category_key,category_keys,completed_at,first_seen_at,last_seen_at,seen_count,
+      strategies,supplier_cost_min,supplier_cost_max,currency,listing_count,inventory,
+      verified_inventory,delivery_days_min,delivery_days_max`;
+    let legacyRequest = client.from('discovery_catalog').select(legacyColumns, { count: 'exact' });
+    if (input.search?.trim()) {
+      const safeSearch = input.search.trim().slice(0, 100).replace(/[%_]/g, '\\$&');
+      legacyRequest = legacyRequest.ilike('title', `%${safeSearch}%`);
+    }
+    if (input.eligibility) legacyRequest = legacyRequest.eq('eligibility_status', input.eligibility);
+    if (sort === 'score') legacyRequest = legacyRequest.order('score', { ascending: false });
+    else if (sort === 'confidence') legacyRequest = legacyRequest.order('confidence', { ascending: false });
+    else legacyRequest = legacyRequest.order('created_at', { ascending: false });
+    const legacyResult = await legacyRequest
+      .order('external_product_id', { ascending: true })
+      .range(start, start + pageSize - 1);
+    resultError = legacyResult.error;
+    resultStatus = legacyResult.status;
+    resultCount = legacyResult.count;
+    resultData = (legacyResult.data as unknown as Array<Record<string, unknown>> | null)?.map((row) => ({
+      ...row,
+      niche_key: 'other',
+      use_case_keys: [],
+    })) ?? null;
+  }
+  if (resultError && ['42P01', 'PGRST205'].includes(resultError.code)) {
     const legacy = await readRecentDiscoveryCandidates(client);
     return { items: legacy, total: legacy.length, page: 1, pageSize };
   }
-  if (result.error) {
-    throw workspaceReadError(result, 'Discovery results could not be loaded. Please try again.');
+  if (resultError) {
+    throw workspaceReadError({ error: resultError, status: resultStatus }, 'Discovery results could not be loaded. Please try again.');
   }
-  const parsed = z.array(discoveryCatalogRow).safeParse(result.data);
+  const parsed = z.array(discoveryCatalogRow).safeParse(resultData);
   if (!parsed.success) throw new Error('The discovery catalog is not in the expected format. Contact an administrator.');
   const candidateIds = parsed.data.map((candidate) => candidate.id);
   let quotes: z.infer<typeof discoveryShippingQuoteSummary>[] = [];
@@ -614,7 +645,7 @@ export async function readDiscoveryCandidatePage(
   }));
   return {
     items: z.array(discoveryCandidateSummary).parse(items),
-    total: result.count ?? parsed.data.length,
+    total: resultCount ?? parsed.data.length,
     page,
     pageSize,
   };
